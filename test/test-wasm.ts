@@ -20,6 +20,7 @@ describe('WASM module', () => {
     expect(typeof m._getFontMetrics).toBe('function');
     expect(typeof m._getKerning).toBe('function');
     expect(typeof m._shapeFromSvgPath).toBe('function');
+    expect(typeof m._getShapeBounds).toBe('function');
     expect(typeof m._generateMtsdf).toBe('function');
     expect(typeof m._destroyShape).toBe('function');
     expect(typeof m._destroyFont).toBe('function');
@@ -51,6 +52,30 @@ describe('WASM module', () => {
       m._free(strPtr);
 
       expect(shapeHandle).toBeGreaterThan(0);
+      m._destroyShape(shapeHandle);
+    });
+
+    it('can read shape bounds from SVG path data', () => {
+      const pathStr = 'M 10 20 L 30 50 L 10 80 Z';
+      const strLen = pathStr.length * 4 + 1;
+      const strPtr = m._malloc(strLen);
+      m.stringToUTF8(pathStr, strPtr, strLen);
+
+      const shapeHandle = m._shapeFromSvgPath(strPtr, 100, 100);
+      m._free(strPtr);
+      expect(shapeHandle).toBeGreaterThan(0);
+
+      const buf = m._malloc(8 * 4);
+      m._getShapeBounds(shapeHandle, buf, buf + 8, buf + 16, buf + 24);
+      const left = m.HEAPF64[buf >> 3];
+      const bottom = m.HEAPF64[(buf + 8) >> 3];
+      const right = m.HEAPF64[(buf + 16) >> 3];
+      const top = m.HEAPF64[(buf + 24) >> 3];
+
+      expect(right).toBeGreaterThan(left);
+      expect(top).toBeGreaterThan(bottom);
+
+      m._free(buf);
       m._destroyShape(shapeHandle);
     });
 

@@ -75,9 +75,12 @@ export class MsdfKit {
 
     const metrics = this.getGlyphMetrics(font, codepoint);
     const mode = config.mode ?? 'mtsdf';
-    const bitmap = this.renderShape(shapeHandle, config);
-
-    m._destroyShape(shapeHandle);
+    let bitmap: Float32Array;
+    try {
+      bitmap = this.renderShape(shapeHandle, config);
+    } finally {
+      m._destroyShape(shapeHandle);
+    }
 
     return {
       id: `glyph:${codepoint}`,
@@ -104,8 +107,12 @@ export class MsdfKit {
     if (shapeHandle < 0) throw new Error('Failed to create shape from SVG path');
 
     const mode = config.mode ?? 'mtsdf';
-    const bitmap = this.renderShape(shapeHandle, config);
-    m._destroyShape(shapeHandle);
+    let bitmap: Float32Array;
+    try {
+      bitmap = this.renderShape(shapeHandle, config);
+    } finally {
+      m._destroyShape(shapeHandle);
+    }
 
     return {
       id: `icon:${svgPathData.substring(0, 20)}`,
@@ -204,7 +211,24 @@ export class MsdfKit {
       sdfMode
     );
 
-    if (!ptr) throw new Error('SDF generation failed');
+    if (!ptr) {
+      const bounds = this.getShapeBounds(shapeHandle);
+      const shapeW = bounds.right - bounds.left;
+      const shapeH = bounds.top - bounds.bottom;
+      const usableW = config.width - 2 * config.pxRange;
+      const usableH = config.height - 2 * config.pxRange;
+
+      let reason = 'unknown reason';
+      if (usableW <= 0 || usableH <= 0) {
+        reason = `bitmap ${config.width}x${config.height} is too small for pxRange=${config.pxRange}`;
+      } else if (shapeW <= 0 || shapeH <= 0) {
+        reason = `shape bounds are degenerate (${shapeW}x${shapeH}); the SVG path may be empty, open-only, or otherwise non-fillable`;
+      } else {
+        reason = `shape bounds=${shapeW}x${shapeH}, bitmap=${config.width}x${config.height}, pxRange=${config.pxRange}`;
+      }
+
+      throw new Error(`SDF generation failed: ${reason}`);
+    }
 
     const numFloats = config.width * config.height * channels;
     const bitmap = new Float32Array(numFloats);
@@ -212,6 +236,22 @@ export class MsdfKit {
 
     m._destroyBitmap(ptr);
     return bitmap;
+  }
+
+  private getShapeBounds(shapeHandle: number): { left: number; bottom: number; right: number; top: number } {
+    const m = this.module;
+    const buf = m._malloc(8 * 4);
+    try {
+      m._getShapeBounds(shapeHandle, buf, buf + 8, buf + 16, buf + 24);
+      return {
+        left: m.HEAPF64[buf >> 3],
+        bottom: m.HEAPF64[(buf + 8) >> 3],
+        right: m.HEAPF64[(buf + 16) >> 3],
+        top: m.HEAPF64[(buf + 24) >> 3],
+      };
+    } finally {
+      m._free(buf);
+    }
   }
 }
 

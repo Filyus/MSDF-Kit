@@ -144,6 +144,20 @@ int shapeFromSvgPath(const char *pathData, double viewBoxW, double viewBoxH) {
     return handle;
 }
 
+EMSCRIPTEN_KEEPALIVE
+void getShapeBounds(int shapeHandle,
+                    double *left, double *bottom,
+                    double *right, double *top) {
+    auto it = g_shapes.find(shapeHandle);
+    if (it == g_shapes.end()) return;
+
+    msdfgen::Shape::Bounds bounds = it->second->getBounds();
+    if (left)   *left   = bounds.l;
+    if (bottom) *bottom = bounds.b;
+    if (right)  *right  = bounds.r;
+    if (top)    *top    = bounds.t;
+}
+
 // === Generation ===
 // sdfMode: 0 = SDF (1ch), 1 = PSDF (1ch), 2 = MSDF (3ch), 3 = MTSDF (4ch)
 

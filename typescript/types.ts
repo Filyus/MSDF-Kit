@@ -117,6 +117,11 @@ export interface MsdfKitWasmModule {
   ): void;
   _getKerning(fontHandle: number, cp1: number, cp2: number): number;
   _shapeFromSvgPath(pathDataPtr: number, viewBoxW: number, viewBoxH: number): number;
+  _getShapeBounds(
+    shapeHandle: number,
+    leftPtr: number, bottomPtr: number,
+    rightPtr: number, topPtr: number
+  ): void;
   _generateMtsdf(
     shapeHandle: number, width: number, height: number,
     pxRange: number, angleThreshold: number, coloringMode: number,
