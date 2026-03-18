@@ -3,16 +3,44 @@
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",
+  "module": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./atlas-packer": {
+      "types": "./dist/atlas-packer.d.ts",
+      "import": "./dist/atlas-packer.js",
+      "default": "./dist/atlas-packer.js"
+    },
+    "./wasm-loader": {
+      "types": "./dist/wasm-loader.d.ts",
+      "import": "./dist/wasm-loader.js",
+      "default": "./dist/wasm-loader.js"
+    },
+    "./types": {
+      "types": "./dist/types.d.ts",
+      "import": "./dist/types.js",
+      "default": "./dist/types.js"
+    },
+    "./build/msdf-kit.js": "./build/msdf-kit.js",
+    "./build/msdf-kit.wasm": "./build/msdf-kit.wasm",
+    "./package.json": "./package.json"
+  },
   "files": [
     "dist/",
     "build/msdf-kit.wasm",
     "build/msdf-kit.js"
   ],
   "scripts": {
-    "compile": "emcmake cmake -B cmake-build -S . && cmake --build cmake-build",
-    "build:ts": "tsc",
-    "build": "npm run compile && npm run build:ts",
+    "compile": "powershell -ExecutionPolicy Bypass -File ./build.ps1 -SkipTs",
+    "build:wasm": "powershell -ExecutionPolicy Bypass -File ./build.ps1 -SkipTs",
+    "build:ts": "powershell -ExecutionPolicy Bypass -File ./build.ps1 -SkipWasm",
+    "build:clean": "powershell -ExecutionPolicy Bypass -File ./build.ps1 -Clean",
+    "build": "powershell -ExecutionPolicy Bypass -File ./build.ps1",
     "test": "vitest run"
   },
   "devDependencies": {

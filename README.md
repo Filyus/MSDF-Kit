@@ -50,18 +50,25 @@ MSDF-Kit/
 
 ## Prerequisites
 
-- **Emscripten SDK** — installed at `C:\Projects\emsdk` (or update path in `build.ps1`)
+- **Emscripten SDK** — available via `EMSDK`, `PATH`, or a standard local install; you can also pass `-EmsdkRoot` to `.\build.ps1`
 - **Visual Studio 2022** — for CMake and Ninja (bundled with VS)
 - **Node.js** 18+
 - **Git** — for submodule initialization
 
 ## Build
 
+Recommended build entrypoints:
+
+- `npm run build` — primary build command
+- `.\build.ps1` — direct PowerShell entrypoint with optional overrides such as `-EmsdkRoot` and `-VsCMakeBase`
+
 ```powershell
+npm run build            # recommended
 .\build.ps1              # full build: WASM + TypeScript
 .\build.ps1 -Clean       # clean rebuild
 .\build.ps1 -SkipWasm    # TypeScript only
 .\build.ps1 -SkipTs      # WASM only
+.\\build.ps1 -EmsdkRoot D:\emsdk
 ```
 
 The script locates Emscripten, CMake, and Ninja automatically, then:
@@ -117,7 +124,7 @@ npx vitest run test/test-packer.ts    # single file
 ```typescript
 import { MsdfKit } from 'msdf-kit';
 
-const msdf = await MsdfKit.create('./msdf-kit.wasm');
+const msdf = await MsdfKit.create();
 
 // Load font
 const fontData = await fetch('Roboto-Regular.ttf').then(r => r.arrayBuffer());
@@ -149,6 +156,16 @@ const metrics = msdf.getFontMetrics(font);
 // Cleanup
 msdf.destroyFont(font);
 msdf.dispose();
+```
+
+`MsdfKit.create()` resolves the packaged `msdf-kit.wasm` and `msdf-kit.js` automatically. This is the recommended setup for Vite and other bundlers, because you do not need to import files from `/public`.
+
+If you want to host the WASM files yourself, you can still pass a custom URL:
+
+```typescript
+import { MsdfKit } from 'msdf-kit';
+
+const msdf = await MsdfKit.create('/assets/msdf-kit.wasm');
 ```
 
 ### MsdfConfig

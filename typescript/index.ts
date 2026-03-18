@@ -1,4 +1,4 @@
-import { loadWasmModule } from './wasm-loader.js';
+import { getBundledGlueUrl, getBundledWasmUrl, loadWasmModule } from './wasm-loader.js';
 import { packAtlas } from './atlas-packer.js';
 import type {
   MsdfKitWasmModule,
@@ -24,8 +24,11 @@ export class MsdfKit {
   }
 
   /** Create and initialize a MsdfKit instance. */
-  static async create(wasmUrl: string): Promise<MsdfKit> {
-    const module = await loadWasmModule(wasmUrl);
+  static async create(wasmUrl: string = getBundledWasmUrl()): Promise<MsdfKit> {
+    const glueUrl = wasmUrl === getBundledWasmUrl()
+      ? getBundledGlueUrl()
+      : undefined;
+    const module = await loadWasmModule(wasmUrl, glueUrl);
     return new MsdfKit(module);
   }
 
@@ -225,3 +228,4 @@ export type {
 } from './types.js';
 
 export { packAtlas } from './atlas-packer.js';
+export { getBundledGlueUrl, getBundledWasmUrl, loadWasmModule } from './wasm-loader.js';
