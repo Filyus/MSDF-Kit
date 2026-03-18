@@ -1,0 +1,9 @@
+node_modules/
+build/
+cmake-build/
+dist/
+*.o
+*.obj
+*.wasm
+*.js.map
+.cache/

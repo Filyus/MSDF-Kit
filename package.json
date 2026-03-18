@@ -1,0 +1,23 @@
+{
+  "name": "msdf-kit",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist/",
+    "build/msdf-kit.wasm",
+    "build/msdf-kit.js"
+  ],
+  "scripts": {
+    "compile": "emcmake cmake -B cmake-build -S . && cmake --build cmake-build",
+    "build:ts": "tsc",
+    "build": "npm run compile && npm run build:ts",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.0"
+  }
+}

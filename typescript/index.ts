@@ -1,0 +1,227 @@
+import { loadWasmModule } from './wasm-loader.js';
+import { packAtlas } from './atlas-packer.js';
+import type {
+  MsdfKitWasmModule,
+  MsdfConfig,
+  GlyphMetrics,
+  FontMetrics,
+  AtlasEntry,
+  PackedAtlas,
+  PackOptions,
+  FontHandle,
+} from './types.js';
+
+const COLORING_MAP = { simple: 0, inkTrap: 1, byDistance: 2 } as const;
+const MODE_MAP = { sdf: 0, psdf: 1, msdf: 2, mtsdf: 3 } as const;
+const CHANNELS_MAP = { sdf: 1, psdf: 1, msdf: 3, mtsdf: 4 } as const;
+
+export class MsdfKit {
+  private module: MsdfKitWasmModule;
+  private fontDataPtrs = new Map<FontHandle, number>();
+
+  private constructor(module: MsdfKitWasmModule) {
+    this.module = module;
+  }
+
+  /** Create and initialize a MsdfKit instance. */
+  static async create(wasmUrl: string): Promise<MsdfKit> {
+    const module = await loadWasmModule(wasmUrl);
+    return new MsdfKit(module);
+  }
+
+  // === Font loading ===
+
+  /** Load a font from an ArrayBuffer. Returns a font handle. */
+  loadFont(data: ArrayBuffer): FontHandle {
+    const m = this.module;
+    const bytes = new Uint8Array(data);
+    const ptr = m._malloc(bytes.length);
+    m.HEAPU8.set(bytes, ptr);
+    const handle = m._loadFont(ptr, bytes.length);
+    if (handle < 0) {
+      m._free(ptr);
+      throw new Error('Failed to load font');
+    }
+    // FreeType keeps a reference to the data buffer, so we must keep it alive
+    this.fontDataPtrs.set(handle, ptr);
+    return handle;
+  }
+
+  /** Get global metrics of a loaded font. */
+  getFontMetrics(font: FontHandle): FontMetrics {
+    const m = this.module;
+    const buf = m._malloc(8 * 4); // 4 doubles
+    m._getFontMetrics(font, buf, buf + 8, buf + 16, buf + 24);
+    const result: FontMetrics = {
+      ascender: m.HEAPF64[buf >> 3],
+      descender: m.HEAPF64[(buf + 8) >> 3],
+      lineHeight: m.HEAPF64[(buf + 16) >> 3],
+      unitsPerEm: m.HEAPF64[(buf + 24) >> 3],
+    };
+    m._free(buf);
+    return result;
+  }
+
+  // === Single entry generation ===
+
+  /** Generate an SDF bitmap for a single glyph. */
+  generateGlyph(font: FontHandle, codepoint: number, config: MsdfConfig): AtlasEntry {
+    const m = this.module;
+    const shapeHandle = m._shapeFromGlyph(font, codepoint);
+    if (shapeHandle < 0) throw new Error(`Failed to create shape for codepoint ${codepoint}`);
+
+    const metrics = this.getGlyphMetrics(font, codepoint);
+    const mode = config.mode ?? 'mtsdf';
+    const bitmap = this.renderShape(shapeHandle, config);
+
+    m._destroyShape(shapeHandle);
+
+    return {
+      id: `glyph:${codepoint}`,
+      bitmap,
+      width: config.width,
+      height: config.height,
+      channels: CHANNELS_MAP[mode],
+      metrics,
+    };
+  }
+
+  /** Generate an SDF bitmap from SVG path data. */
+  generateIcon(svgPathData: string, viewBox: [number, number], config: MsdfConfig): AtlasEntry {
+    const m = this.module;
+
+    // Allocate string in WASM memory
+    const strLen = svgPathData.length * 4 + 1;
+    const strPtr = m._malloc(strLen);
+    m.stringToUTF8(svgPathData, strPtr, strLen);
+
+    const shapeHandle = m._shapeFromSvgPath(strPtr, viewBox[0], viewBox[1]);
+    m._free(strPtr);
+
+    if (shapeHandle < 0) throw new Error('Failed to create shape from SVG path');
+
+    const mode = config.mode ?? 'mtsdf';
+    const bitmap = this.renderShape(shapeHandle, config);
+    m._destroyShape(shapeHandle);
+
+    return {
+      id: `icon:${svgPathData.substring(0, 20)}`,
+      bitmap,
+      width: config.width,
+      height: config.height,
+      channels: CHANNELS_MAP[mode],
+    };
+  }
+
+  // === Batch generation ===
+
+  /** Generate MTSDF bitmaps for all characters in a charset string. */
+  generateGlyphs(font: FontHandle, charset: string, config: MsdfConfig): AtlasEntry[] {
+    const entries: AtlasEntry[] = [];
+    const seen = new Set<number>();
+
+    for (const char of charset) {
+      const cp = char.codePointAt(0)!;
+      if (seen.has(cp)) continue;
+      seen.add(cp);
+
+      try {
+        entries.push(this.generateGlyph(font, cp, config));
+      } catch {
+        // Skip glyphs that fail (e.g. missing in font)
+      }
+    }
+    return entries;
+  }
+
+  // === Atlas packing ===
+
+  /** Pack entries into a texture atlas. */
+  packAtlas(entries: AtlasEntry[], options?: PackOptions): PackedAtlas {
+    return packAtlas(entries, options);
+  }
+
+  // === Kerning ===
+
+  /** Get kerning between two codepoints. */
+  getKerning(font: FontHandle, cp1: number, cp2: number): number {
+    return this.module._getKerning(font, cp1, cp2);
+  }
+
+  // === Cleanup ===
+
+  /** Destroy a loaded font and free its resources. */
+  destroyFont(font: FontHandle): void {
+    this.module._destroyFont(font);
+    const dataPtr = this.fontDataPtrs.get(font);
+    if (dataPtr) {
+      this.module._free(dataPtr);
+      this.fontDataPtrs.delete(font);
+    }
+  }
+
+  /** Dispose of the entire module. */
+  dispose(): void {
+    // Emscripten doesn't have a standard teardown, but we can null the ref
+    (this.module as MsdfKitWasmModule | null) = null!;
+  }
+
+  // === Private helpers ===
+
+  private getGlyphMetrics(font: FontHandle, codepoint: number): GlyphMetrics {
+    const m = this.module;
+    const buf = m._malloc(8 * 5); // 5 doubles
+    m._getGlyphMetrics(font, codepoint, buf, buf + 8, buf + 16, buf + 24, buf + 32);
+    const result: GlyphMetrics = {
+      codepoint,
+      advance: m.HEAPF64[buf >> 3],
+      left: m.HEAPF64[(buf + 8) >> 3],
+      bottom: m.HEAPF64[(buf + 16) >> 3],
+      right: m.HEAPF64[(buf + 24) >> 3],
+      top: m.HEAPF64[(buf + 32) >> 3],
+    };
+    m._free(buf);
+    return result;
+  }
+
+  private renderShape(shapeHandle: number, config: MsdfConfig): Float32Array {
+    const m = this.module;
+    const angleThreshold = config.angleThreshold ?? 3.0;
+    const coloringMode = COLORING_MAP[config.coloring ?? 'simple'];
+    const mode = config.mode ?? 'mtsdf';
+    const sdfMode = MODE_MAP[mode];
+    const channels = CHANNELS_MAP[mode];
+
+    const ptr = m._generateMtsdf(
+      shapeHandle,
+      config.width, config.height,
+      config.pxRange,
+      angleThreshold,
+      coloringMode,
+      sdfMode
+    );
+
+    if (!ptr) throw new Error('SDF generation failed');
+
+    const numFloats = config.width * config.height * channels;
+    const bitmap = new Float32Array(numFloats);
+    bitmap.set(m.HEAPF32.subarray(ptr >> 2, (ptr >> 2) + numFloats));
+
+    m._destroyBitmap(ptr);
+    return bitmap;
+  }
+}
+
+export type {
+  MsdfConfig,
+  SdfMode,
+  GlyphMetrics,
+  FontMetrics,
+  AtlasEntry,
+  AtlasRegion,
+  PackedAtlas,
+  PackOptions,
+  FontHandle,
+} from './types.js';
+
+export { packAtlas } from './atlas-packer.js';
