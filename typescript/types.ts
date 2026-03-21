@@ -27,6 +27,20 @@ export interface GlyphMetrics {
   top: number;
 }
 
+/** A single shaped glyph returned by layoutText. Positions are EM-normalised. */
+export interface ShapedGlyph {
+  /** OpenType glyph ID (use with generateGlyphById). */
+  glyphId: number;
+  /** X offset relative to pen position. */
+  xOffset: number;
+  /** Y offset relative to baseline. */
+  yOffset: number;
+  /** Horizontal advance to move pen after this glyph. */
+  xAdvance: number;
+  /** Vertical advance (non-zero for vertical scripts). */
+  yAdvance: number;
+}
+
 /** Global font metrics (em-normalized). */
 export interface FontMetrics {
   ascender: number;
@@ -105,6 +119,8 @@ export interface MsdfKitWasmModule {
   _init(): void;
   _loadFont(dataPtr: number, length: number): number;
   _shapeFromGlyph(fontHandle: number, codepoint: number): number;
+  _shapeFromGlyphId(fontHandle: number, glyphId: number): number;
+  _layoutText(fontHandle: number, textPtr: number, outCountPtr: number): number;
   _getGlyphMetrics(
     fontHandle: number, codepoint: number,
     advPtr: number, leftPtr: number, bottomPtr: number,

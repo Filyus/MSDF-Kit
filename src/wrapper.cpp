@@ -8,8 +8,13 @@
 #include <ext/import-font.h>
 #include <ext/import-svg.h>
 #include <core/edge-coloring.h>
+#include <core/rasterization.h>
 
 #include "svg_shape.h"
+
+#ifdef MSDF_KIT_HARFBUZZ
+#include <hb.h>
+#endif
 
 // ============================================================
 // Internal state
@@ -22,6 +27,10 @@ static int g_nextFontHandle = 1;
 
 static std::unordered_map<int, msdfgen::Shape *> g_shapes;
 static int g_nextShapeHandle = 1;
+
+#ifdef MSDF_KIT_HARFBUZZ
+static std::unordered_map<int, hb_font_t *> g_hbFonts;
+#endif
 
 static int g_lastBitmapW = 0;
 static int g_lastBitmapH = 0;
@@ -51,6 +60,20 @@ int loadFont(const uint8_t *data, int length) {
 
     int handle = g_nextFontHandle++;
     g_fonts[handle] = font;
+
+#ifdef MSDF_KIT_HARFBUZZ
+    {
+        hb_blob_t *blob = hb_blob_create(
+            reinterpret_cast<const char *>(data), length,
+            HB_MEMORY_MODE_DUPLICATE, nullptr, nullptr);
+        hb_face_t *face = hb_face_create(blob, 0);
+        hb_blob_destroy(blob);
+        hb_font_t *hbFont = hb_font_create(face);
+        hb_face_destroy(face);
+        g_hbFonts[handle] = hbFont;
+    }
+#endif
+
     return handle;
 }
 
@@ -128,6 +151,75 @@ double getKerning(int fontHandle, int cp1, int cp2) {
                         msdfgen::FONT_SCALING_EM_NORMALIZED);
     return kern;
 }
+
+// === Glyph by index ===
+
+EMSCRIPTEN_KEEPALIVE
+int shapeFromGlyphId(int fontHandle, int glyphId) {
+    auto it = g_fonts.find(fontHandle);
+    if (it == g_fonts.end()) return -1;
+
+    auto *shape = new msdfgen::Shape();
+    double advance = 0;
+    if (!msdfgen::loadGlyph(*shape, it->second,
+                            msdfgen::GlyphIndex(static_cast<unsigned>(glyphId)),
+                            msdfgen::FONT_SCALING_EM_NORMALIZED, &advance)) {
+        delete shape;
+        return -1;
+    }
+
+    shape->normalize();
+
+    int handle = g_nextShapeHandle++;
+    g_shapes[handle] = shape;
+    return handle;
+}
+
+#ifdef MSDF_KIT_HARFBUZZ
+
+// layoutText returns a malloc'd float array with 5 floats per glyph:
+//   [glyphId, xOffset, yOffset, xAdvance, yAdvance]
+// Positions are EM-normalised (same scale as msdfgen FONT_SCALING_EM_NORMALIZED).
+// Caller must free() the result. outCount receives the glyph count.
+EMSCRIPTEN_KEEPALIVE
+float *layoutText(int fontHandle, const char *text, int *outCount) {
+    auto it = g_hbFonts.find(fontHandle);
+    if (it == g_hbFonts.end()) return nullptr;
+
+    hb_font_t *hbFont = it->second;
+    unsigned upem = hb_face_get_upem(hb_font_get_face(hbFont));
+    float scale = upem > 0 ? 1.0f / static_cast<float>(upem) : 1.0f;
+
+    hb_buffer_t *buf = hb_buffer_create();
+    hb_buffer_add_utf8(buf, text, -1, 0, -1);
+    hb_buffer_guess_segment_properties(buf);
+    hb_shape(hbFont, buf, nullptr, 0);
+
+    unsigned glyphCount = 0;
+    hb_glyph_info_t     *infos = hb_buffer_get_glyph_infos(buf, &glyphCount);
+    hb_glyph_position_t *poses = hb_buffer_get_glyph_positions(buf, &glyphCount);
+
+    float *output = static_cast<float *>(malloc(glyphCount * 5 * sizeof(float)));
+    if (!output) {
+        hb_buffer_destroy(buf);
+        return nullptr;
+    }
+
+    for (unsigned i = 0; i < glyphCount; ++i) {
+        float *g = output + i * 5;
+        g[0] = static_cast<float>(infos[i].codepoint); // glyph ID (post-shaping)
+        g[1] = static_cast<float>(poses[i].x_offset)  * scale;
+        g[2] = static_cast<float>(poses[i].y_offset)  * scale;
+        g[3] = static_cast<float>(poses[i].x_advance) * scale;
+        g[4] = static_cast<float>(poses[i].y_advance) * scale;
+    }
+
+    if (outCount) *outCount = static_cast<int>(glyphCount);
+    hb_buffer_destroy(buf);
+    return output;
+}
+
+#endif // MSDF_KIT_HARFBUZZ
 
 // === SVG ===
 
@@ -209,6 +301,8 @@ float *generateMtsdf(int shapeHandle, int width, int height,
     );
 
     msdfgen::Range distRange(pxRange / scale);
+    const float sdfZeroValue = 0.5f;
+    const msdfgen::FillRule fillRule = msdfgen::FILL_NONZERO;
 
     // Channel count per mode: SDF=1, PSDF=1, MSDF=3, MTSDF=4
     static const int channelCounts[] = { 1, 1, 3, 4 };
@@ -222,6 +316,7 @@ float *generateMtsdf(int shapeHandle, int width, int height,
             msdfgen::Bitmap<float, 1> bmp(width, height);
             msdfgen::GeneratorConfig cfg;
             msdfgen::generateSDF(bmp, shape, projection, distRange, cfg);
+            msdfgen::distanceSignCorrection(bmp, shape, projection, sdfZeroValue, fillRule);
             for (int y = 0; y < height; ++y)
                 for (int x = 0; x < width; ++x)
                     output[y * width + x] = bmp(x, y)[0];
@@ -231,6 +326,7 @@ float *generateMtsdf(int shapeHandle, int width, int height,
             msdfgen::Bitmap<float, 1> bmp(width, height);
             msdfgen::GeneratorConfig cfg;
             msdfgen::generatePSDF(bmp, shape, projection, distRange, cfg);
+            msdfgen::distanceSignCorrection(bmp, shape, projection, sdfZeroValue, fillRule);
             for (int y = 0; y < height; ++y)
                 for (int x = 0; x < width; ++x)
                     output[y * width + x] = bmp(x, y)[0];
@@ -240,6 +336,7 @@ float *generateMtsdf(int shapeHandle, int width, int height,
             msdfgen::Bitmap<float, 3> bmp(width, height);
             msdfgen::MSDFGeneratorConfig cfg;
             msdfgen::generateMSDF(bmp, shape, projection, distRange, cfg);
+            msdfgen::distanceSignCorrection(bmp, shape, projection, sdfZeroValue, fillRule);
             for (int y = 0; y < height; ++y)
                 for (int x = 0; x < width; ++x) {
                     int i = (y * width + x) * 3;
@@ -254,6 +351,7 @@ float *generateMtsdf(int shapeHandle, int width, int height,
             msdfgen::Bitmap<float, 4> bmp(width, height);
             msdfgen::MSDFGeneratorConfig cfg;
             msdfgen::generateMTSDF(bmp, shape, projection, distRange, cfg);
+            msdfgen::distanceSignCorrection(bmp, shape, projection, sdfZeroValue, fillRule);
             for (int y = 0; y < height; ++y)
                 for (int x = 0; x < width; ++x) {
                     int i = (y * width + x) * 4;
@@ -296,6 +394,13 @@ void destroyFont(int fontHandle) {
         msdfgen::destroyFont(it->second);
         g_fonts.erase(it);
     }
+#ifdef MSDF_KIT_HARFBUZZ
+    auto hit = g_hbFonts.find(fontHandle);
+    if (hit != g_hbFonts.end()) {
+        hb_font_destroy(hit->second);
+        g_hbFonts.erase(hit);
+    }
+#endif
 }
 
 EMSCRIPTEN_KEEPALIVE

@@ -11,11 +11,13 @@ High-quality, resolution-independent text and icon rendering for WebGL / WebGPU.
 
 **WASM Module** (C++ / Emscripten) — `wrapper.cpp`: Emscripten exports bridging JS to msdfgen. `svg_shape.cpp`: SVG path `d` attribute parser (no XML / tinyxml2).
 
-**Native Libraries** — `msdfgen-core`: SDF/MSDF/MTSDF generation, edge coloring, shape primitives. `FreeType` (Emscripten port): TTF/OTF font parsing.
+**Native Libraries** — `msdfgen-core`: SDF/MSDF/MTSDF generation, edge coloring, shape primitives. `FreeType` (Emscripten port): TTF/OTF font parsing. `HarfBuzz` (Emscripten port, optional): OpenType text shaping — ligatures, kerning, complex scripts, RTL.
 
 ### Data Flow
 
-TTF/OTF or SVG path → msdfgen Shape → edge coloring → SDF generation → float bitmap (1–4 ch) → MaxRects packing → RGBA uint8 atlas
+**Text:** TTF/OTF → HarfBuzz shaping → glyph IDs + EM-normalised positions → msdfgen Shape → edge coloring → SDF generation → float bitmap (1–4 ch) → MaxRects packing → RGBA uint8 atlas
+
+**Icon:** SVG path `d` → msdfgen Shape → SDF generation → float bitmap → atlas
 
 ### SDF Modes
 
@@ -97,6 +99,7 @@ npx tsc
 - **Ext sources compiled directly** — `import-font.cpp`, `import-svg.cpp`, `resolve-shape-geometry.cpp` are part of MSDF-Kit (not through msdfgen-ext)
 - **No tinyxml2** — `MSDFGEN_USE_TINYXML2` is omitted; we parse SVG path `d` attributes directly
 - **FreeType via Emscripten port** — `-sUSE_FREETYPE=1`
+- **`MSDF_KIT_HARFBUZZ=ON`** (default) — enables HarfBuzz via `-sUSE_HARFBUZZ=1`; disable with `-DMSDF_KIT_HARFBUZZ=OFF` to reduce binary size (~400 KB gzipped)
 
 </details>
 
@@ -119,53 +122,74 @@ npx vitest run test/test-packer.ts    # single file
 
 ## API
 
-### Quick Start
+`MsdfKit.create()` resolves the packaged `msdf-kit.wasm` and `msdf-kit.js` automatically — recommended for Vite and other bundlers. To host the WASM files yourself pass a custom URL:
+
+```typescript
+const msdf = await MsdfKit.create('/assets/msdf-kit.wasm');
+```
+
+### Approach 1 — Charset atlas (known glyph set, no shaping)
+
+Suitable for static UI text, numbers, icons, or any case where you know the characters upfront and don't need ligatures or complex script support.
 
 ```typescript
 import { MsdfKit } from 'msdf-kit';
 
 const msdf = await MsdfKit.create();
+const font = msdf.loadFont(await fetch('Roboto-Regular.ttf').then(r => r.arrayBuffer()));
 
-// Load font
-const fontData = await fetch('Roboto-Regular.ttf').then(r => r.arrayBuffer());
-const font = msdf.loadFont(fontData);
+// Pre-generate a fixed glyph set
+const glyphs = msdf.generateGlyphs(font, 'ABCabc0123 !', { width: 32, height: 32, pxRange: 4 });
 
-// Generate glyphs
-const glyphs = msdf.generateGlyphs(font, 'ABCabc0123', {
-  width: 32, height: 32, pxRange: 4,
-});
+// SVG icons can be packed into the same atlas
+const icon = msdf.generateIcon('arrow', 'M10 20 L30 50 L10 80 Z', [100, 100], { width: 48, height: 48, pxRange: 4 });
 
-// Generate icon from SVG path
-const icon = msdf.generateIcon('M10 20 L30 50 L10 80 Z', [100, 100], {
-  width: 48, height: 48, pxRange: 4,
-});
-
-// Pack into atlas
-const atlas = msdf.packAtlas([...glyphs, icon], {
-  maxWidth: 2048, maxHeight: 2048,
-  padding: 1, pot: true,
-});
+const atlas = msdf.packAtlas([...glyphs, icon], { maxWidth: 2048, maxHeight: 2048, padding: 1, pot: true });
 // atlas.textures  — Uint8Array[] (RGBA, one per page)
-// atlas.regions   — Map<string, AtlasRegion>
+// atlas.regions   — Map<string, AtlasRegion>  keys = your IDs: 'A', 'B', 'arrow', ...
 // atlas.width/height — page dimensions
 
-// Kerning & metrics
-const kern = msdf.getKerning(font, 65, 86); // A–V
+// Metrics for manual layout
 const metrics = msdf.getFontMetrics(font);
+const kern = msdf.getKerning(font, 65, 86); // A–V pair
 
-// Cleanup
 msdf.destroyFont(font);
 msdf.dispose();
 ```
 
-`MsdfKit.create()` resolves the packaged `msdf-kit.wasm` and `msdf-kit.js` automatically. This is the recommended setup for Vite and other bundlers, because you do not need to import files from `/public`.
+### Approach 2 — Shaped text (HarfBuzz)
 
-If you want to host the WASM files yourself, you can still pass a custom URL:
+Suitable for dynamic text, multilingual content, ligatures, RTL, or any OpenType feature. HarfBuzz returns the correct glyph IDs and positions — no manual kerning needed.
 
 ```typescript
 import { MsdfKit } from 'msdf-kit';
 
-const msdf = await MsdfKit.create('/assets/msdf-kit.wasm');
+const msdf = await MsdfKit.create();
+const font = msdf.loadFont(await fetch('Roboto-Regular.ttf').then(r => r.arrayBuffer()));
+
+const glyphConfig = { width: 32, height: 32, pxRange: 4 };
+
+// Shape text — HarfBuzz resolves ligatures, kerning, substitutions
+const shaped = msdf.layoutText(font, 'Hello, мир!');
+
+// Render only unique glyph IDs
+const seen = new Map<number, AtlasEntry>();
+for (const g of shaped)
+  if (!seen.has(g.glyphId))
+    seen.set(g.glyphId, msdf.generateGlyphById(`g${g.glyphId}`, font, g.glyphId, glyphConfig));
+
+const atlas = msdf.packAtlas([...seen.values()]);
+
+// Draw: iterate shaped glyphs, advance pen by xAdvance
+let penX = 0;
+for (const g of shaped) {
+  const region = atlas.regions.get(`g${g.glyphId}`);
+  // render region at (penX + g.xOffset, baseline + g.yOffset)
+  penX += g.xAdvance;
+}
+
+msdf.destroyFont(font);
+msdf.dispose();
 ```
 
 ### MsdfConfig
@@ -189,6 +213,40 @@ const msdf = await MsdfKit.create('/assets/msdf-kit.wasm');
 | `pot` | `boolean` | `true` | Constrain to power-of-two dimensions |
 | `pxRange` | `number` | `4` | Stored in result for shader use |
 
+### Text Shaping
+
+`layoutText` runs full HarfBuzz shaping (ligatures, kerning, complex scripts, RTL) and returns
+EM-normalised glyph positions. Use the resulting glyph IDs with `generateGlyphById` to render
+each glyph into an atlas:
+
+```typescript
+import { MsdfKit } from 'msdf-kit';
+
+const msdf = await MsdfKit.create();
+const font = msdf.loadFont(await fetch('Roboto.ttf').then(r => r.arrayBuffer()));
+
+// Shape text — returns glyphId + EM-normalised xOffset/yOffset/xAdvance/yAdvance per glyph
+const shaped = msdf.layoutText(font, 'Hello, мир!');
+
+// Render unique glyphs into atlas entries
+const glyphConfig = { width: 32, height: 32, pxRange: 4 };
+const seen = new Map<number, AtlasEntry>();
+for (const g of shaped) {
+  if (!seen.has(g.glyphId))
+    seen.set(g.glyphId, msdf.generateGlyphById(`g${g.glyphId}`, font, g.glyphId, glyphConfig));
+}
+
+const atlas = msdf.packAtlas([...seen.values()]);
+
+// Lay out the string using HarfBuzz positions + atlas regions
+let penX = 0;
+for (const g of shaped) {
+  const region = atlas.regions.get(`g${g.glyphId}`);
+  // draw region at (penX + g.xOffset, baseline + g.yOffset)
+  penX += g.xAdvance;
+}
+```
+
 ### WASM Exports
 
 Low-level C functions (accessible via `module._functionName`):
@@ -197,16 +255,20 @@ Low-level C functions (accessible via `module._functionName`):
 |----------|-------------|
 | `init()` | Initialize FreeType library |
 | `loadFont(dataPtr, length)` | Load TTF/OTF → font handle |
-| `shapeFromGlyph(font, codepoint)` | Glyph → shape handle |
+| `shapeFromGlyph(font, codepoint)` | Glyph by Unicode codepoint → shape handle |
+| `shapeFromGlyphId(font, glyphId)` | Glyph by OpenType glyph ID → shape handle |
+| `layoutText(font, text, outCountPtr)` | Shape text with HarfBuzz → `float*` `[glyphId, xOff, yOff, xAdv, yAdv]` × N |
 | `shapeFromSvgPath(pathData, vbW, vbH)` | SVG path `d` → shape handle |
 | `generateMtsdf(shape, w, h, pxRange, angle, coloring, sdfMode)` | Shape → float bitmap |
 | `getGlyphMetrics(font, cp, ...)` | Glyph advance and bounds |
 | `getFontMetrics(font, ...)` | Ascender, descender, lineHeight, unitsPerEm |
-| `getKerning(font, cp1, cp2)` | Kerning between two glyphs |
+| `getKerning(font, cp1, cp2)` | Kerning between two codepoints (legacy) |
 | `getBitmapSize(wPtr, hPtr)` | Dimensions of last generated bitmap |
 | `destroyShape(handle)` | Free a shape |
-| `destroyFont(handle)` | Free a font |
+| `destroyFont(handle)` | Free a font + HarfBuzz font |
 | `destroyBitmap(ptr)` | Free a bitmap |
+
+> `layoutText` and `shapeFromGlyphId` require a build with `MSDF_KIT_HARFBUZZ=ON` (default).
 
 ## GLSL Shader
 

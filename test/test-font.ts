@@ -175,6 +175,127 @@ describe('font → MTSDF (integration)', () => {
     }
   });
 
+  // ── HarfBuzz shaping ───────────────────────────────────────────
+
+  describe('HarfBuzz text shaping', () => {
+    function layoutText(text: string) {
+      const strLen = text.length * 4 + 1;
+      const strPtr = m._malloc(strLen);
+      m.stringToUTF8(text, strPtr, strLen);
+      const countPtr = m._malloc(4);
+      const ptr = m._layoutText(fontHandle, strPtr, countPtr);
+      m._free(strPtr);
+      if (!ptr) { m._free(countPtr); return []; }
+      const count = m.getValue(countPtr, 'i32');
+      m._free(countPtr);
+      const result: Array<{ glyphId: number; xOffset: number; yOffset: number; xAdvance: number; yAdvance: number }> = [];
+      for (let i = 0; i < count; i++) {
+        const base = (ptr >> 2) + i * 5;
+        result.push({
+          glyphId:  m.HEAPF32[base],
+          xOffset:  m.HEAPF32[base + 1],
+          yOffset:  m.HEAPF32[base + 2],
+          xAdvance: m.HEAPF32[base + 3],
+          yAdvance: m.HEAPF32[base + 4],
+        });
+      }
+      m._free(ptr);
+      return result;
+    }
+
+    it('shapes "Hello" and returns correct glyph count', () => {
+      const glyphs = layoutText('Hello');
+      expect(glyphs.length).toBe(5);
+    });
+
+    it('all shaped glyphs have positive glyph IDs', () => {
+      const glyphs = layoutText('ABC');
+      expect(glyphs.every(g => g.glyphId > 0)).toBe(true);
+    });
+
+    it('all shaped glyphs have positive x advances', () => {
+      const glyphs = layoutText('Hello');
+      expect(glyphs.every(g => g.xAdvance > 0)).toBe(true);
+    });
+
+    it('advances are EM-normalised (< 1.5 for typical glyphs)', () => {
+      const glyphs = layoutText('ABC');
+      expect(glyphs.every(g => g.xAdvance < 1.5)).toBe(true);
+    });
+
+    it('different characters produce different glyph IDs', () => {
+      const glyphs = layoutText('AB');
+      expect(glyphs[0].glyphId).not.toBe(glyphs[1].glyphId);
+    });
+
+    it('repeated character produces the same glyph ID', () => {
+      const glyphs = layoutText('AA');
+      expect(glyphs[0].glyphId).toBe(glyphs[1].glyphId);
+    });
+
+    it('shapeFromGlyphId creates a valid shape for a shaped glyph', () => {
+      const [g] = layoutText('A');
+      expect(g).toBeDefined();
+      const shapeHandle = m._shapeFromGlyphId(fontHandle, g.glyphId);
+      expect(shapeHandle).toBeGreaterThan(0);
+      m._destroyShape(shapeHandle);
+    });
+
+    it('shapeFromGlyphId renders the same bitmap as shapeFromGlyph for ASCII', () => {
+      const [g] = layoutText('A');
+      const w = 32, h = 32;
+
+      const shById  = m._shapeFromGlyphId(fontHandle, g.glyphId);
+      const shByCp  = m._shapeFromGlyph(fontHandle, 65);
+      expect(shById).toBeGreaterThan(0);
+      expect(shByCp).toBeGreaterThan(0);
+
+      const ptrById = m._generateMtsdf(shById, w, h, 4.0, 3.0, 0, 3);
+      const ptrByCp = m._generateMtsdf(shByCp, w, h, 4.0, 3.0, 0, 3);
+
+      const n = w * h * 4;
+      const bmpById = new Float32Array(n);
+      const bmpByCp = new Float32Array(n);
+      bmpById.set(m.HEAPF32.subarray(ptrById >> 2, (ptrById >> 2) + n));
+      bmpByCp.set(m.HEAPF32.subarray(ptrByCp >> 2, (ptrByCp >> 2) + n));
+
+      let maxDiff = 0;
+      for (let i = 0; i < n; i++)
+        maxDiff = Math.max(maxDiff, Math.abs(bmpById[i] - bmpByCp[i]));
+      expect(maxDiff).toBeLessThan(0.001);
+
+      m._destroyBitmap(ptrById); m._destroyShape(shById);
+      m._destroyBitmap(ptrByCp); m._destroyShape(shByCp);
+    });
+
+    it('full shaped pipeline: layoutText → shapeFromGlyphId → atlas', () => {
+      const text = 'Hi!';
+      const glyphs = layoutText(text);
+      expect(glyphs.length).toBe(3);
+
+      const w = 32, h = 32;
+      const seen = new Map<number, { id: string; bitmap: Float32Array; width: number; height: number; channels: number }>();
+
+      for (const g of glyphs) {
+        if (seen.has(g.glyphId)) continue;
+        const shapeHandle = m._shapeFromGlyphId(fontHandle, g.glyphId);
+        expect(shapeHandle).toBeGreaterThan(0);
+        const ptr = m._generateMtsdf(shapeHandle, w, h, 4.0, 3.0, 0, 3);
+        expect(ptr).toBeGreaterThan(0);
+        const bitmap = new Float32Array(w * h * 4);
+        bitmap.set(m.HEAPF32.subarray(ptr >> 2, (ptr >> 2) + w * h * 4));
+        seen.set(g.glyphId, { id: `g${g.glyphId}`, bitmap, width: w, height: h, channels: 4 });
+        m._destroyBitmap(ptr);
+        m._destroyShape(shapeHandle);
+      }
+
+      const atlas = packAtlas([...seen.values()]);
+      expect(atlas.regions.size).toBe(seen.size);
+      for (const g of glyphs)
+        expect(atlas.regions.has(`g${g.glyphId}`)).toBe(true);
+    });
+  });
+
   describe('all SDF modes with font glyphs', () => {
     const MODES = [0, 1, 2, 3] as const;
     const MODE_NAMES = ['SDF', 'PSDF', 'MSDF', 'MTSDF'] as const;

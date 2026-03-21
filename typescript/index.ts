@@ -5,6 +5,7 @@ import type {
   MsdfConfig,
   GlyphMetrics,
   FontMetrics,
+  ShapedGlyph,
   AtlasEntry,
   PackedAtlas,
   PackOptions,
@@ -67,8 +68,8 @@ export class MsdfKit {
 
   // === Single entry generation ===
 
-  /** Generate an SDF bitmap for a single glyph. */
-  generateGlyph(font: FontHandle, codepoint: number, config: MsdfConfig): AtlasEntry {
+  /** Generate an SDF bitmap for a single glyph by Unicode codepoint. */
+  generateGlyph(id: string, font: FontHandle, codepoint: number, config: MsdfConfig): AtlasEntry {
     const m = this.module;
     const shapeHandle = m._shapeFromGlyph(font, codepoint);
     if (shapeHandle < 0) throw new Error(`Failed to create shape for codepoint ${codepoint}`);
@@ -83,7 +84,7 @@ export class MsdfKit {
     }
 
     return {
-      id: `glyph:${codepoint}`,
+      id,
       bitmap,
       width: config.width,
       height: config.height,
@@ -93,7 +94,7 @@ export class MsdfKit {
   }
 
   /** Generate an SDF bitmap from SVG path data. */
-  generateIcon(svgPathData: string, viewBox: [number, number], config: MsdfConfig): AtlasEntry {
+  generateIcon(id: string, svgPathData: string, viewBox: [number, number], config: MsdfConfig): AtlasEntry {
     const m = this.module;
 
     // Allocate string in WASM memory
@@ -115,7 +116,67 @@ export class MsdfKit {
     }
 
     return {
-      id: `icon:${svgPathData.substring(0, 20)}`,
+      id,
+      bitmap,
+      width: config.width,
+      height: config.height,
+      channels: CHANNELS_MAP[mode],
+    };
+  }
+
+  /** Shape a text string with HarfBuzz. Returns one entry per output glyph with
+   *  EM-normalised positions. Use the glyph IDs with generateGlyphById. */
+  layoutText(font: FontHandle, text: string): ShapedGlyph[] {
+    const m = this.module;
+    const strLen = text.length * 4 + 1;
+    const strPtr = m._malloc(strLen);
+    m.stringToUTF8(text, strPtr, strLen);
+
+    const countPtr = m._malloc(4);
+    const ptr = m._layoutText(font, strPtr, countPtr);
+    m._free(strPtr);
+
+    if (!ptr) {
+      m._free(countPtr);
+      return [];
+    }
+
+    const count = m.getValue(countPtr, 'i32');
+    m._free(countPtr);
+
+    const result: ShapedGlyph[] = [];
+    for (let i = 0; i < count; i++) {
+      const base = (ptr >> 2) + i * 5;
+      result.push({
+        glyphId:  m.HEAPF32[base],
+        xOffset:  m.HEAPF32[base + 1],
+        yOffset:  m.HEAPF32[base + 2],
+        xAdvance: m.HEAPF32[base + 3],
+        yAdvance: m.HEAPF32[base + 4],
+      });
+    }
+
+    m._free(ptr);
+    return result;
+  }
+
+  /** Generate an SDF bitmap for a glyph by its OpenType glyph ID.
+   *  Use with glyph IDs returned by layoutText. */
+  generateGlyphById(id: string, font: FontHandle, glyphId: number, config: MsdfConfig): AtlasEntry {
+    const m = this.module;
+    const shapeHandle = m._shapeFromGlyphId(font, glyphId);
+    if (shapeHandle < 0) throw new Error(`Failed to create shape for glyph ID ${glyphId}`);
+
+    const mode = config.mode ?? 'mtsdf';
+    let bitmap: Float32Array;
+    try {
+      bitmap = this.renderShape(shapeHandle, config);
+    } finally {
+      m._destroyShape(shapeHandle);
+    }
+
+    return {
+      id,
       bitmap,
       width: config.width,
       height: config.height,
@@ -136,7 +197,7 @@ export class MsdfKit {
       seen.add(cp);
 
       try {
-        entries.push(this.generateGlyph(font, cp, config));
+        entries.push(this.generateGlyph(String.fromCodePoint(cp), font, cp, config));
       } catch {
         // Skip glyphs that fail (e.g. missing in font)
       }
@@ -260,6 +321,7 @@ export type {
   SdfMode,
   GlyphMetrics,
   FontMetrics,
+  ShapedGlyph,
   AtlasEntry,
   AtlasRegion,
   PackedAtlas,

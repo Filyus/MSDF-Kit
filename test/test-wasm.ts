@@ -16,6 +16,8 @@ describe('WASM module', () => {
     expect(typeof m._init).toBe('function');
     expect(typeof m._loadFont).toBe('function');
     expect(typeof m._shapeFromGlyph).toBe('function');
+    expect(typeof m._shapeFromGlyphId).toBe('function');
+    expect(typeof m._layoutText).toBe('function');
     expect(typeof m._getGlyphMetrics).toBe('function');
     expect(typeof m._getFontMetrics).toBe('function');
     expect(typeof m._getKerning).toBe('function');

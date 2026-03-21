@@ -7,3 +7,4 @@ dist/
 *.wasm
 *.js.map
 .cache/
+.claude/
