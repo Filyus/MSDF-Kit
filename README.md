@@ -261,19 +261,21 @@ for (const g of shaped) {
 
 Low-level C functions (accessible via `module._functionName`):
 
+All metric and position values are **EM-normalised** (1.0 = 1 em). To convert to pixels: `value × fontSize`.
+
 | Function | Description |
 |----------|-------------|
 | `init()` | Initialize FreeType library |
 | `loadFont(dataPtr, length)` | Load TTF/OTF → font handle |
 | `shapeFromGlyph(font, codepoint)` | Glyph by Unicode codepoint → shape handle |
 | `shapeFromGlyphId(font, glyphId)` | Glyph by OpenType glyph ID → shape handle |
-| `layoutText(font, text, outCountPtr)` | Shape text with HarfBuzz → `float*` `[glyphId, xOff, yOff, xAdv, yAdv]` × N |
+| `layoutText(font, text, outCountPtr)` | Shape text with HarfBuzz → `float*` `[glyphId, xOff, yOff, xAdv, yAdv]` × N (EM-normalised) |
 | `shapeFromSvgPath(pathData, vbW, vbH)` | SVG path `d` → shape handle |
 | `generateMtsdf(shape, w, h, pxRange, angle, coloring, sdfMode)` | Shape → float bitmap |
-| `getGlyphMetrics(font, cp, ...)` | Glyph advance and bounds |
-| `getFontMetrics(font, ...)` | Ascender, descender, lineHeight, unitsPerEm |
-| `getKerning(font, cp1, cp2)` | Kerning between two codepoints (legacy) |
-| `getBitmapSize(wPtr, hPtr)` | Dimensions of last generated bitmap |
+| `getGlyphMetrics(font, cp, ...)` | Glyph advance and bounds (EM-normalised) |
+| `getFontMetrics(font, ...)` | Ascender, descender, lineHeight, unitsPerEm (EM-normalised) |
+| `getKerning(font, cp1, cp2)` | Kerning between two codepoints (EM-normalised) |
+| `getBitmapSize(wPtr, hPtr)` | Dimensions of last generated bitmap (px) |
 | `destroyShape(handle)` | Free a shape |
 | `destroyFont(handle)` | Free a font + HarfBuzz font |
 | `destroyBitmap(ptr)` | Free a bitmap |
