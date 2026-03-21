@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: mymindstorm/setup-emsdk@v14
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Configure (Emscripten)
+        run: emcmake cmake -B cmake-build -S . -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build WASM
+        run: cmake --build cmake-build
+
+      - name: Build TypeScript
+        run: npx tsc
+
+      - name: Test
+        run: npm test
