@@ -188,15 +188,16 @@ describe('font → MTSDF (integration)', () => {
       if (!ptr) { m._free(countPtr); return []; }
       const count = m.getValue(countPtr, 'i32');
       m._free(countPtr);
-      const result: Array<{ glyphId: number; xOffset: number; yOffset: number; xAdvance: number; yAdvance: number }> = [];
+      const result: Array<{ glyphId: number; xOffset: number; yOffset: number; xAdvance: number; yAdvance: number; cluster: number }> = [];
       for (let i = 0; i < count; i++) {
-        const base = (ptr >> 2) + i * 5;
+        const base = (ptr >> 2) + i * 6;
         result.push({
           glyphId:  m.HEAPF32[base],
           xOffset:  m.HEAPF32[base + 1],
           yOffset:  m.HEAPF32[base + 2],
           xAdvance: m.HEAPF32[base + 3],
           yAdvance: m.HEAPF32[base + 4],
+          cluster:  m.HEAPF32[base + 5],
         });
       }
       m._free(ptr);

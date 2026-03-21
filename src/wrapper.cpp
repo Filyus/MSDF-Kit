@@ -177,9 +177,10 @@ int shapeFromGlyphId(int fontHandle, int glyphId) {
 
 #ifdef MSDF_KIT_HARFBUZZ
 
-// layoutText returns a malloc'd float array with 5 floats per glyph:
-//   [glyphId, xOffset, yOffset, xAdvance, yAdvance]
+// layoutText returns a malloc'd float array with 6 floats per glyph:
+//   [glyphId, xOffset, yOffset, xAdvance, yAdvance, cluster]
 // Positions are EM-normalised (same scale as msdfgen FONT_SCALING_EM_NORMALIZED).
+// cluster is the byte offset of the source character in the input UTF-8 string.
 // Caller must free() the result. outCount receives the glyph count.
 EMSCRIPTEN_KEEPALIVE
 float *layoutText(int fontHandle, const char *text, int *outCount) {
@@ -199,19 +200,20 @@ float *layoutText(int fontHandle, const char *text, int *outCount) {
     hb_glyph_info_t     *infos = hb_buffer_get_glyph_infos(buf, &glyphCount);
     hb_glyph_position_t *poses = hb_buffer_get_glyph_positions(buf, &glyphCount);
 
-    float *output = static_cast<float *>(malloc(glyphCount * 5 * sizeof(float)));
+    float *output = static_cast<float *>(malloc(glyphCount * 6 * sizeof(float)));
     if (!output) {
         hb_buffer_destroy(buf);
         return nullptr;
     }
 
     for (unsigned i = 0; i < glyphCount; ++i) {
-        float *g = output + i * 5;
+        float *g = output + i * 6;
         g[0] = static_cast<float>(infos[i].codepoint); // glyph ID (post-shaping)
         g[1] = static_cast<float>(poses[i].x_offset)  * scale;
         g[2] = static_cast<float>(poses[i].y_offset)  * scale;
         g[3] = static_cast<float>(poses[i].x_advance) * scale;
         g[4] = static_cast<float>(poses[i].y_advance) * scale;
+        g[5] = static_cast<float>(infos[i].cluster);  // byte offset of source char
     }
 
     if (outCount) *outCount = static_cast<int>(glyphCount);

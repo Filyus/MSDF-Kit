@@ -39,6 +39,10 @@ export interface ShapedGlyph {
   xAdvance: number;
   /** Vertical advance (non-zero for vertical scripts). */
   yAdvance: number;
+  /** Byte offset of the source character in the input UTF-8 string (HarfBuzz cluster value).
+   *  Use this to map shaped glyphs back to source characters — do NOT use array index,
+   *  as ligatures/RTL may produce a different glyph count than input characters. */
+  cluster: number;
 }
 
 /** Global font metrics (em-normalized). */
