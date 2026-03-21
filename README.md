@@ -15,7 +15,7 @@ High-quality, resolution-independent text and icon rendering for WebGL / WebGPU.
 
 ### Data Flow
 
-**Text:** TTF/OTF → HarfBuzz shaping → glyph IDs + EM-normalised positions → msdfgen Shape → edge coloring → SDF generation → float bitmap (1–4 ch) → MaxRects packing → RGBA uint8 atlas
+**Text:** TTF/OTF → HarfBuzz shaping → glyph IDs + EM-normalised positions → msdfgen Shape → edge coloring → SDF generation → float bitmap (1–4 ch) → MaxRects packing → packed atlas (default: RGBA uint8)
 
 **Icon:** SVG path `d` → msdfgen Shape → SDF generation → float bitmap → atlas
 
@@ -155,7 +155,7 @@ const glyphs = msdf.generateGlyphs(font, 'ABCabc0123 !', { width: 32, height: 32
 const icon = msdf.generateIcon('arrow', 'M10 20 L30 50 L10 80 Z', [100, 100], { width: 48, height: 48, pxRange: 4 });
 
 const atlas = msdf.packAtlas([...glyphs, icon], { maxWidth: 2048, maxHeight: 2048, padding: 1, pot: true });
-// atlas.textures  — Uint8Array[] (RGBA, one per page)
+// atlas.textures  — Uint8Array[] (RGBA, one per page, default packed output)
 // atlas.regions   — Map<string, AtlasRegion>  keys = your IDs: 'A', 'B', 'arrow', ...
 // atlas.width/height — page dimensions
 
@@ -309,6 +309,59 @@ float msdfAlpha(vec2 uv, vec2 texSize) {
 ```
 
 `median(r,g,b)` recovers the distance field from multi-channel encoding. `fwidth()` provides screen-space antialiasing for crisp edges at any zoom level. The alpha channel (true SDF) is available for effects like shadows and outlines.
+
+## Texture Format Notes
+
+`MSDF-Kit` generates glyphs and icons as float bitmaps first, then `packAtlas()` converts them to packed `Uint8Array` RGBA pages by default. This matches the standard MSDF workflow and is appropriate for normal text/icon rendering where the shader only needs the local distance band around the contour.
+
+You do not inherently need `RGBA16F` just because the underlying signed distance is mathematically unbounded. In the usual MSDF pipeline, the useful range is the configured `pxRange` neighborhood around the edge, and values outside that range are expected to saturate.
+
+### Standard MSDF Rendering
+
+Typical text/icon rendering only uses the RGB median near the contour to compute coverage:
+
+```glsl
+vec3 msdf = texture(u_msdfAtlas, uv).rgb;
+float sd = (median(msdf.r, msdf.g, msdf.b) - 0.5) * pxRange;
+float opacity = clamp(sd / fwidth(sd) + 0.5, 0.0, 1.0);
+```
+
+or equivalently, with a precomputed screen-space scale factor:
+
+```glsl
+vec3 msdf = texture(u_msdfAtlas, uv).rgb;
+float encoded = median(msdf.r, msdf.g, msdf.b);
+float screenPxDistance = screenPxRange() * (encoded - 0.5);
+float opacity = clamp(screenPxDistance + 0.5, 0.0, 1.0);
+```
+
+Even when the texture is `MTSDF`, standard sharp rendering typically uses only the RGB median because that preserves corners better than the true SDF in alpha. The alpha channel is available, but is usually reserved for effects or for blending away from MSDF artifacts.
+
+In this mode, only the local band around `0.5` matters. Packed `RGBA8` is the normal storage format.
+
+### Distance-Driven Rendering
+
+Some renderers use the stored field itself as a signed-distance source for broader effects. A common MTSDF decode is:
+
+```glsl
+vec4 mtsdf = texture(u_msdfAtlas, uv);
+float msdfDist = (0.5 - median(mtsdf.r, mtsdf.g, mtsdf.b)) * pxRange;
+float sdfDist  = (0.5 - mtsdf.a) * pxRange;
+float blend = smoothstep(pxRange * 0.1875, pxRange * 0.375, abs(msdfDist));
+float dist = mix(msdfDist, sdfDist, blend);
+```
+
+That decoded `dist` can then drive effects directly:
+
+```glsl
+float stroke = 1.0 - smoothstep(strokeWidth - aa, strokeWidth + aa, abs(dist));
+float iso = 1.0 - smoothstep(isoWidth - aa, isoWidth + aa, abs(fract(dist * isoFrequency) - 0.5));
+float fill = 1.0 - smoothstep(-aa, aa, dist);
+```
+
+In this mode the renderer cares about the magnitude of the stored distance, not just whether it crosses the edge near `0.5`. If you need those larger distances preserved instead of saturated, use a float or half-float atlas.
+
+Use a float or half-float atlas only if your renderer intentionally uses the stored field as a wider signed-distance source for effects beyond the normal MSDF edge band, such as broad outlines, glows, shadows, morphology, or other distance-driven operations that rely on preserving distances outside the encoded `pxRange`.
 
 ## License
 
