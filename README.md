@@ -232,6 +232,12 @@ of the source character in the input string. Use `cluster` (not array index) to 
 back to source characters; ligatures and RTL may produce a different glyph count than input characters.
 Use the resulting glyph IDs with `generateGlyphById` to render each glyph into an atlas:
 
+**Coordinate system** — all values follow the OpenType convention:
+- **Y-axis points up.** `ascender > 0`, `descender < 0`, baseline at Y = 0.
+- **`xOffset` / `yOffset`** — displacement from the current pen position to the glyph origin.
+- **`xAdvance`** — move the pen right by this amount after drawing the glyph (`yAdvance` for vertical scripts).
+- **EM-normalised** — divide all raw font units by `unitsPerEm`. To get pixels: `value × fontSize`.
+
 ```typescript
 import { MsdfKit } from 'msdf-kit';
 
