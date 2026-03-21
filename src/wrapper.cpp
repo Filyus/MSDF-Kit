@@ -199,16 +199,16 @@ float *generateMtsdf(int shapeHandle, int width, int height,
     double scaleY = usableH / shapeH;
     double scale = scaleX < scaleY ? scaleX : scaleY;
 
-    // Center the shape in the bitmap
-    double translateX = -bounds.l * scale + (width - shapeW * scale) * 0.5;
-    double translateY = -bounds.b * scale + (height - shapeH * scale) * 0.5;
+    // Projection translation is expressed in shape units, not pixels.
+    double translateX = -bounds.l + (width / scale - shapeW) * 0.5;
+    double translateY = -bounds.b + (height / scale - shapeH) * 0.5;
 
     msdfgen::Projection projection(
         msdfgen::Vector2(scale, scale),
         msdfgen::Vector2(translateX, translateY)
     );
 
-    msdfgen::Range distRange(pxRange);
+    msdfgen::Range distRange(pxRange / scale);
 
     // Channel count per mode: SDF=1, PSDF=1, MSDF=3, MTSDF=4
     static const int channelCounts[] = { 1, 1, 3, 4 };
