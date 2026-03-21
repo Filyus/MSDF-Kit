@@ -27,6 +27,19 @@ function generateBitmap(m: MsdfKitWasmModule, shapeHandle: number, width: number
   return bitmap;
 }
 
+function median3(r: number, g: number, b: number): number {
+  return Math.max(Math.min(r, g), Math.min(Math.max(r, g), b));
+}
+
+function readPixel(bitmap: Float32Array, width: number, channels: number, x: number, y: number) {
+  const i = (y * width + x) * channels;
+  const r = bitmap[i] ?? 0;
+  const g = bitmap[i + 1] ?? r;
+  const b = bitmap[i + 2] ?? r;
+  const a = bitmap[i + 3] ?? r;
+  return { r, g, b, a, median: median3(r, g, b) };
+}
+
 describe('SVG → MTSDF (integration)', () => {
   let m: MsdfKitWasmModule;
 
@@ -90,6 +103,24 @@ describe('SVG → MTSDF (integration)', () => {
       expect(bitmapPtr).toBeGreaterThan(0);
       m._destroyBitmap(bitmapPtr);
     }
+
+    m._destroyShape(handle);
+  });
+
+  it('keeps the concave star center filled after sign correction', () => {
+    const star = 'M12 2L14.75 9.25L22 12L14.75 14.75L12 22L9.25 14.75L2 12L9.25 9.25Z';
+    const size = 64;
+    const handle = makeShape(m, star, 24, 24);
+    expect(handle).toBeGreaterThan(0);
+
+    const bitmap = generateBitmap(m, handle, size, size, 3);
+    const center = readPixel(bitmap, size, 4, Math.floor(size / 2), Math.floor(size / 2));
+    const background = readPixel(bitmap, size, 4, 4, 4);
+
+    expect(center.a).toBeGreaterThan(0.5);
+    expect(center.median).toBeGreaterThan(0.5);
+    expect(background.a).toBeLessThan(0.5);
+    expect(background.median).toBeLessThan(0.5);
 
     m._destroyShape(handle);
   });

@@ -16,7 +16,7 @@ bool shapeFromSvgPathData(msdfgen::Shape &output, const char *pathData,
     if (!msdfgen::buildShapeFromSvgPath(output, pathData, snapRange))
         return false;
 
-    // Normalize: Y-axis flip (SVG is top-down, msdfgen expects bottom-up)
+    output.setYAxisOrientation(msdfgen::Y_DOWNWARD);
     output.normalize();
 
     return output.validate();
