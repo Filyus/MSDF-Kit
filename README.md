@@ -361,6 +361,8 @@ float fill = 1.0 - smoothstep(-aa, aa, dist);
 
 In this mode the renderer cares about the magnitude of the stored distance, not just whether it crosses the edge near `0.5`. If you need those larger distances preserved instead of saturated, use a float or half-float atlas.
 
+`packAtlas()` returns packed `Uint8Array` RGBA pages by default. That output is ideal for standard MSDF coverage rendering, but it may not preserve enough distance range for shaders that reuse `dist` as a wider signed-distance input.
+
 Use a float or half-float atlas only if your renderer intentionally uses the stored field as a wider signed-distance source for effects beyond the normal MSDF edge band, such as broad outlines, glows, shadows, morphology, or other distance-driven operations that rely on preserving distances outside the encoded `pxRange`.
 
 ## License
