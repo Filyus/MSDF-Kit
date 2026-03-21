@@ -269,6 +269,69 @@ describe('font → MTSDF (integration)', () => {
       m._destroyBitmap(ptrByCp); m._destroyShape(shByCp);
     });
 
+    it('cluster values are sequential byte offsets for ASCII text', () => {
+      const text = 'ABCDE';
+      const glyphs = layoutText(text);
+      expect(glyphs.length).toBe(5);
+      // For ASCII, each char is 1 byte → cluster = char index
+      for (let i = 0; i < glyphs.length; i++)
+        expect(glyphs[i].cluster).toBe(i);
+    });
+
+    it('cluster correctly maps glyphs back to source characters', () => {
+      const text = 'Hello';
+      const encoder = new TextEncoder();
+      const bytes = encoder.encode(text);
+      const glyphs = layoutText(text);
+      expect(glyphs.length).toBe(5);
+
+      // Each cluster is a valid byte offset into the source string
+      for (const g of glyphs) {
+        expect(g.cluster).toBeGreaterThanOrEqual(0);
+        expect(g.cluster).toBeLessThan(bytes.length);
+      }
+
+      // Reconstructed chars via cluster match original string chars
+      const decoder = new TextDecoder();
+      for (let i = 0; i < glyphs.length; i++) {
+        const charFromCluster = decoder.decode(bytes.slice(glyphs[i].cluster, glyphs[i].cluster + 1));
+        expect(charFromCluster).toBe(text[i]);
+      }
+    });
+
+    it('yOffset is zero for all glyphs in plain Latin text (baseline alignment)', () => {
+      const glyphs = layoutText('Hello World');
+      // For horizontal LTR Latin, HarfBuzz sets yOffset=0 — all glyphs sit on the baseline
+      expect(glyphs.every(g => g.yOffset === 0)).toBe(true);
+    });
+
+    it('glyph bounds stay within font ascender/descender (vertical alignment)', () => {
+      const metBuf = m._malloc(8 * 4);
+      m._getFontMetrics(fontHandle, metBuf, metBuf + 8, metBuf + 16, metBuf + 24);
+      const ascender  = m.HEAPF64[metBuf >> 3];
+      const descender = m.HEAPF64[(metBuf + 8) >> 3];
+      m._free(metBuf);
+
+      // Check a set of typical glyphs
+      for (const cp of [65, 66, 103, 112, 121]) { // A B g p y (descenders included)
+        const buf = m._malloc(8 * 5);
+        m._getGlyphMetrics(fontHandle, cp, buf, buf + 8, buf + 16, buf + 24, buf + 32);
+        const bottom = m.HEAPF64[(buf + 16) >> 3];
+        const top    = m.HEAPF64[(buf + 32) >> 3];
+        m._free(buf);
+
+        expect(top).toBeLessThanOrEqual(ascender + 0.01);   // top within ascender
+        expect(bottom).toBeGreaterThanOrEqual(descender - 0.01); // bottom within descender
+      }
+    });
+
+    it('pen advances accumulate to a positive total width', () => {
+      const glyphs = layoutText('Hello');
+      const totalAdvance = glyphs.reduce((sum, g) => sum + g.xAdvance, 0);
+      // 5 glyphs with typical advance ~0.5 em each → total > 1 em
+      expect(totalAdvance).toBeGreaterThan(1.0);
+    });
+
     it('full shaped pipeline: layoutText → shapeFromGlyphId → atlas', () => {
       const text = 'Hi!';
       const glyphs = layoutText(text);
