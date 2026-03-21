@@ -180,6 +180,7 @@ const font = msdf.loadFont(await fetch('Roboto-Regular.ttf').then(r => r.arrayBu
 const glyphConfig = { width: 32, height: 32, pxRange: 4 };
 
 // Shape text — HarfBuzz resolves ligatures, kerning, substitutions
+// Each glyph has: glyphId, xOffset, yOffset, xAdvance, yAdvance, cluster
 const shaped = msdf.layoutText(font, 'Hello, мир!');
 
 // Render only unique glyph IDs
@@ -226,8 +227,10 @@ msdf.dispose();
 ### Text Shaping
 
 `layoutText` runs full HarfBuzz shaping (ligatures, kerning, complex scripts, RTL) and returns
-EM-normalised glyph positions. Use the resulting glyph IDs with `generateGlyphById` to render
-each glyph into an atlas:
+EM-normalised glyph positions. Each `ShapedGlyph` includes a `cluster` field — the byte offset
+of the source character in the input string. Use `cluster` (not array index) to map shaped glyphs
+back to source characters; ligatures and RTL may produce a different glyph count than input characters.
+Use the resulting glyph IDs with `generateGlyphById` to render each glyph into an atlas:
 
 ```typescript
 import { MsdfKit } from 'msdf-kit';
@@ -235,7 +238,7 @@ import { MsdfKit } from 'msdf-kit';
 const msdf = await MsdfKit.create();
 const font = msdf.loadFont(await fetch('Roboto.ttf').then(r => r.arrayBuffer()));
 
-// Shape text — returns glyphId + EM-normalised xOffset/yOffset/xAdvance/yAdvance per glyph
+// Shape text — returns glyphId + EM-normalised positions + cluster (source char byte offset) per glyph
 const shaped = msdf.layoutText(font, 'Hello, мир!');
 
 // Render unique glyphs into atlas entries
@@ -269,7 +272,7 @@ All metric and position values are **EM-normalised** (1.0 = 1 em). To convert to
 | `loadFont(dataPtr, length)` | Load TTF/OTF → font handle |
 | `shapeFromGlyph(font, codepoint)` | Glyph by Unicode codepoint → shape handle |
 | `shapeFromGlyphId(font, glyphId)` | Glyph by OpenType glyph ID → shape handle |
-| `layoutText(font, text, outCountPtr)` | Shape text with HarfBuzz → `float*` `[glyphId, xOff, yOff, xAdv, yAdv]` × N (EM-normalised) |
+| `layoutText(font, text, outCountPtr)` | Shape text with HarfBuzz → `float*` `[glyphId, xOff, yOff, xAdv, yAdv, cluster]` × N (EM-normalised; cluster = source char byte offset) |
 | `shapeFromSvgPath(pathData, vbW, vbH)` | SVG path `d` → shape handle |
 | `generateMtsdf(shape, w, h, pxRange, angle, coloring, sdfMode)` | Shape → float bitmap |
 | `getGlyphMetrics(font, cp, ...)` | Glyph advance and bounds (EM-normalised) |
