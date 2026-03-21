@@ -99,9 +99,19 @@ npx tsc
 - **Ext sources compiled directly** — `import-font.cpp`, `import-svg.cpp`, `resolve-shape-geometry.cpp` are part of MSDF-Kit (not through msdfgen-ext)
 - **No tinyxml2** — `MSDFGEN_USE_TINYXML2` is omitted; we parse SVG path `d` attributes directly
 - **FreeType via Emscripten port** — `-sUSE_FREETYPE=1`
-- **`MSDF_KIT_HARFBUZZ=ON`** (default) — enables HarfBuzz via `-sUSE_HARFBUZZ=1`; disable with `-DMSDF_KIT_HARFBUZZ=OFF` to reduce binary size (~400 KB gzipped)
+- **`MSDF_KIT_HARFBUZZ=ON`** (default) — enables HarfBuzz via `-sUSE_HARFBUZZ=1`; disable with `-DMSDF_KIT_HARFBUZZ=OFF` to reduce binary size (see table below)
 
 </details>
+
+## Binary Size
+
+Measured with `-O3`, Emscripten. Servers and CDNs typically serve WASM gzip-compressed.
+
+| Config | Raw | Gzip |
+|--------|-----|------|
+| With HarfBuzz (`MSDF_KIT_HARFBUZZ=ON`) | 1,273 KB | 488 KB |
+| Without HarfBuzz (`MSDF_KIT_HARFBUZZ=OFF`) | 712 KB | 306 KB |
+| HarfBuzz overhead | 561 KB | 182 KB |
 
 ## Testing
 
