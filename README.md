@@ -154,8 +154,14 @@ const glyphs = msdf.generateGlyphs(font, 'ABCabc0123 !', { width: 32, height: 32
 // SVG icons can be packed into the same atlas
 const icon = msdf.generateIcon('arrow', 'M10 20 L30 50 L10 80 Z', [100, 100], { width: 48, height: 48, pxRange: 4 });
 
-const atlas = msdf.packAtlas([...glyphs, icon], { maxWidth: 2048, maxHeight: 2048, padding: 1, pot: true });
-// atlas.textures  — Uint8Array[] (RGBA, one per page, default packed output)
+const atlas = msdf.packAtlas([...glyphs, icon], {
+  maxWidth: 2048,
+  maxHeight: 2048,
+  padding: 1,
+  pot: true,
+  atlasFormat: 'rgba8', // default
+});
+// atlas.textures  — (Uint8Array | Float32Array)[] (one RGBA page per item)
 // atlas.regions   — Map<string, AtlasRegion>  keys = your IDs: 'A', 'B', 'arrow', ...
 // atlas.width/height — page dimensions
 
@@ -223,6 +229,7 @@ msdf.dispose();
 | `padding` | `number` | `1` | Pixels between entries |
 | `pot` | `boolean` | `true` | Constrain to power-of-two dimensions |
 | `pxRange` | `number` | `4` | Stored in result for shader use |
+| `atlasFormat` | `'rgba8' \| 'rgba16f' \| 'rgba32f'` | `'rgba8'` | Output atlas storage format |
 
 ### Text Shaping
 
@@ -312,7 +319,9 @@ float msdfAlpha(vec2 uv, vec2 texSize) {
 
 ## Texture Format Notes
 
-`MSDF-Kit` generates glyphs and icons as float bitmaps first, then `packAtlas()` converts them to packed `Uint8Array` RGBA pages by default. This matches the standard MSDF workflow and is appropriate for normal text/icon rendering where the shader only needs the local distance band around the contour.
+`MSDF-Kit` generates glyphs and icons as float bitmaps first. `packAtlas()` can then return either packed `Uint8Array` RGBA pages (`atlasFormat: 'rgba8'`, default) or float `Float32Array` RGBA pages for float atlas workflows (`atlasFormat: 'rgba16f'` or `'rgba32f'`).
+
+The default `rgba8` mode matches the standard MSDF workflow and is appropriate for normal text/icon rendering where the shader only needs the local distance band around the contour.
 
 You do not inherently need `RGBA16F` just because the underlying signed distance is mathematically unbounded. In the usual MSDF pipeline, the useful range is the configured `pxRange` neighborhood around the edge, and values outside that range are expected to saturate.
 
@@ -361,7 +370,9 @@ float fill = 1.0 - smoothstep(-aa, aa, dist);
 
 In this mode the renderer cares about the magnitude of the stored distance, not just whether it crosses the edge near `0.5`. If you need those larger distances preserved instead of saturated, use a float or half-float atlas.
 
-`packAtlas()` returns packed `Uint8Array` RGBA pages by default. That output is ideal for standard MSDF coverage rendering, but it may not preserve enough distance range for shaders that reuse `dist` as a wider signed-distance input.
+`packAtlas()` returns packed `Uint8Array` RGBA pages by default. That output is ideal for standard MSDF coverage rendering, but it may not preserve enough distance range for shaders that reuse `dist` as a wider signed-distance input. In that case, use `packAtlas(entries, { atlasFormat: 'rgba16f' })` or `packAtlas(entries, { atlasFormat: 'rgba32f' })` to keep float atlas data on the CPU side before upload.
+
+On the JavaScript side, both `rgba16f` and `rgba32f` atlas modes return `Float32Array` pages. The `atlasFormat` field tells the renderer which GPU storage format you intend to use at upload time.
 
 Use a float or half-float atlas only if your renderer intentionally uses the stored field as a wider signed-distance source for effects beyond the normal MSDF edge band, such as broad outlines, glows, shadows, morphology, or other distance-driven operations that rely on preserving distances outside the encoded `pxRange`.
 

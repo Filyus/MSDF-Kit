@@ -189,7 +189,90 @@ describe('atlas-packer', () => {
 
     const atlas = packAtlas([entry]);
     expect(atlas.textures).toHaveLength(1);
+    expect(atlas.atlasFormat).toBe('rgba8');
     expect(atlas.regions.get('compat')!.page).toBe(0);
+  });
+
+  it('can pack into float32 atlas pages', () => {
+    const bitmap = new Float32Array(2 * 2 * 4);
+    bitmap[0] = -1.25;
+    bitmap[1] = 0.5;
+    bitmap[2] = 1.75;
+    bitmap[3] = 0.75;
+
+    const entry: AtlasEntry = {
+      id: 'float-test',
+      bitmap,
+      width: 2,
+      height: 2,
+      channels: 4,
+    };
+
+    const atlas = packAtlas([entry], { padding: 0, atlasFormat: 'rgba32f' });
+    expect(atlas.atlasFormat).toBe('rgba32f');
+    expect(atlas.textures).toHaveLength(1);
+    expect(atlas.textures[0]).toBeInstanceOf(Float32Array);
+
+    const region = atlas.regions.get('float-test')!;
+    const base = (region.y * atlas.width + region.x) * 4;
+    const tex = atlas.textures[0] as Float32Array;
+    expect(tex[base + 0]).toBeCloseTo(-1.25);
+    expect(tex[base + 1]).toBeCloseTo(0.5);
+    expect(tex[base + 2]).toBeCloseTo(1.75);
+    expect(tex[base + 3]).toBeCloseTo(0.75);
+  });
+
+  it('can pack into rgba16f atlas pages', () => {
+    const bitmap = new Float32Array(2 * 2 * 4);
+    bitmap[0] = -1.25;
+    bitmap[1] = 0.5;
+    bitmap[2] = 1.75;
+    bitmap[3] = 0.75;
+
+    const entry: AtlasEntry = {
+      id: 'half-test',
+      bitmap,
+      width: 2,
+      height: 2,
+      channels: 4,
+    };
+
+    const atlas = packAtlas([entry], { padding: 0, atlasFormat: 'rgba16f' });
+    expect(atlas.atlasFormat).toBe('rgba16f');
+    expect(atlas.textures).toHaveLength(1);
+    expect(atlas.textures[0]).toBeInstanceOf(Float32Array);
+
+    const region = atlas.regions.get('half-test')!;
+    const base = (region.y * atlas.width + region.x) * 4;
+    const tex = atlas.textures[0] as Float32Array;
+    expect(tex[base + 0]).toBeCloseTo(-1.25);
+    expect(tex[base + 1]).toBeCloseTo(0.5);
+    expect(tex[base + 2]).toBeCloseTo(1.75);
+    expect(tex[base + 3]).toBeCloseTo(0.75);
+  });
+
+  it('fills alpha as 1.0 for 3-channel float32 atlas entries', () => {
+    const bitmap = new Float32Array(2 * 2 * 3);
+    bitmap[0] = 0.1;
+    bitmap[1] = 0.2;
+    bitmap[2] = 0.3;
+
+    const entry: AtlasEntry = {
+      id: 'float-msdf-test',
+      bitmap,
+      width: 2,
+      height: 2,
+      channels: 3,
+    };
+
+    const atlas = packAtlas([entry], { padding: 0, atlasFormat: 'rgba32f' });
+    const region = atlas.regions.get('float-msdf-test')!;
+    const base = (region.y * atlas.width + region.x) * 4;
+    const tex = atlas.textures[0] as Float32Array;
+    expect(tex[base + 0]).toBeCloseTo(0.1);
+    expect(tex[base + 1]).toBeCloseTo(0.2);
+    expect(tex[base + 2]).toBeCloseTo(0.3);
+    expect(tex[base + 3]).toBeCloseTo(1.0);
   });
 
   it('passes pxRange through to result', () => {

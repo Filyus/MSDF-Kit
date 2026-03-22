@@ -9,6 +9,7 @@ import type {
   AtlasEntry,
   PackedAtlas,
   PackOptions,
+  AtlasTextureFormat,
   FontHandle,
 } from './types.js';
 
@@ -327,6 +328,7 @@ export type {
   AtlasRegion,
   PackedAtlas,
   PackOptions,
+  AtlasTextureFormat,
   FontHandle,
 } from './types.js';
 

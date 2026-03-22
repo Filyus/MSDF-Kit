@@ -1,5 +1,6 @@
 /** SDF generation mode. */
 export type SdfMode = 'sdf' | 'psdf' | 'msdf' | 'mtsdf';
+export type AtlasTextureFormat = 'rgba8' | 'rgba16f' | 'rgba32f';
 
 /** Configuration for SDF bitmap generation. */
 export interface MsdfConfig {
@@ -87,8 +88,10 @@ export interface AtlasRegion {
 
 /** Result of packing entries into a texture atlas. */
 export interface PackedAtlas {
-  /** All page textures (RGBA uint8). */
-  textures: Uint8Array[];
+  /** All page textures in the requested atlas format. */
+  textures: Array<Uint8Array | Float32Array>;
+  /** Atlas texture storage format. */
+  atlasFormat: AtlasTextureFormat;
   /** Page width (same for all pages). */
   width: number;
   /** Page height (same for all pages). */
@@ -113,6 +116,8 @@ export interface PackOptions {
   pot?: boolean;
   /** Distance range used for generation, stored in result (default: 4). */
   pxRange?: number;
+  /** Atlas texture storage format (default: 'rgba8'). */
+  atlasFormat?: AtlasTextureFormat;
 }
 
 /** Opaque handle to a loaded font. */

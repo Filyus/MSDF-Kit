@@ -1,4 +1,4 @@
-import type { AtlasEntry, AtlasRegion, PackedAtlas, PackOptions } from './types.js';
+import type { AtlasEntry, AtlasRegion, AtlasTextureFormat, PackedAtlas, PackOptions } from './types.js';
 
 interface Rect {
   x: number;
@@ -135,6 +135,7 @@ export function packAtlas(entries: AtlasEntry[], options?: PackOptions): PackedA
   const padding = options?.padding ?? 1;
   const pot = options?.pot ?? true;
   const pxRange = options?.pxRange ?? 4;
+  const atlasFormat = options?.atlasFormat ?? 'rgba8';
 
   // Sort entries by height descending for better packing
   const sorted = [...entries].sort((a, b) => b.height - a.height);
@@ -162,15 +163,15 @@ export function packAtlas(entries: AtlasEntry[], options?: PackOptions): PackedA
 
     if (allFit) {
       const regions = new Map<string, AtlasRegion>();
-      const texture = new Uint8Array(atlasW * atlasH * 4);
+      const texture = createTexture(atlasW, atlasH, atlasFormat);
       for (const { entry, rect } of placements) {
         regions.set(entry.id, {
           x: rect.x, y: rect.y, w: entry.width, h: entry.height,
           id: entry.id, page: 0,
         });
-        blitEntry(entry, rect, texture, atlasW);
+        blitEntry(entry, rect, texture, atlasW, atlasFormat);
       }
-      return { textures: [texture], width: atlasW, height: atlasH, regions, pxRange };
+      return { textures: [texture], atlasFormat, width: atlasW, height: atlasH, regions, pxRange };
     }
 
     // Grow atlas
@@ -184,14 +185,14 @@ export function packAtlas(entries: AtlasEntry[], options?: PackOptions): PackedA
   }
 
   // --- Multi-page: pack at max dimensions per page ---
-  const textures: Uint8Array[] = [];
+  const textures: Array<Uint8Array | Float32Array> = [];
   const regions = new Map<string, AtlasRegion>();
   let remaining = sorted;
 
   while (remaining.length > 0) {
     const pageIndex = textures.length;
     const packer = new MaxRectsPacker(maxW, maxH);
-    const texture = new Uint8Array(maxW * maxH * 4);
+    const texture = createTexture(maxW, maxH, atlasFormat);
     const notPacked: AtlasEntry[] = [];
 
     for (const entry of remaining) {
@@ -201,7 +202,7 @@ export function packAtlas(entries: AtlasEntry[], options?: PackOptions): PackedA
           x: rect.x, y: rect.y, w: entry.width, h: entry.height,
           id: entry.id, page: pageIndex,
         });
-        blitEntry(entry, rect, texture, maxW);
+        blitEntry(entry, rect, texture, maxW, atlasFormat);
       } else {
         notPacked.push(entry);
       }
@@ -219,6 +220,7 @@ export function packAtlas(entries: AtlasEntry[], options?: PackOptions): PackedA
 
   return {
     textures,
+    atlasFormat,
     width: maxW,
     height: maxH,
     regions,
@@ -226,28 +228,44 @@ export function packAtlas(entries: AtlasEntry[], options?: PackOptions): PackedA
   };
 }
 
-function blitEntry(entry: AtlasEntry, rect: Rect, texture: Uint8Array, atlasW: number): void {
+function createTexture(width: number, height: number, atlasFormat: AtlasTextureFormat): Uint8Array | Float32Array {
+  return atlasFormat === 'rgba8'
+    ? new Uint8Array(width * height * 4)
+    : new Float32Array(width * height * 4);
+}
+
+function blitEntry(
+  entry: AtlasEntry,
+  rect: Rect,
+  texture: Uint8Array | Float32Array,
+  atlasW: number,
+  atlasFormat: AtlasTextureFormat,
+): void {
   const ch = entry.channels ?? 4;
   for (let y = 0; y < entry.height; y++) {
     for (let x = 0; x < entry.width; x++) {
       const srcIdx = (y * entry.width + x) * ch;
       const dstIdx = ((rect.y + y) * atlasW + (rect.x + x)) * 4;
       if (ch === 1) {
-        const v = clampByte(entry.bitmap[srcIdx]);
+        const v = convertChannel(entry.bitmap[srcIdx], atlasFormat);
         texture[dstIdx] = texture[dstIdx + 1] = texture[dstIdx + 2] = texture[dstIdx + 3] = v;
       } else if (ch === 3) {
-        texture[dstIdx]     = clampByte(entry.bitmap[srcIdx]);
-        texture[dstIdx + 1] = clampByte(entry.bitmap[srcIdx + 1]);
-        texture[dstIdx + 2] = clampByte(entry.bitmap[srcIdx + 2]);
-        texture[dstIdx + 3] = 255;
+        texture[dstIdx]     = convertChannel(entry.bitmap[srcIdx], atlasFormat);
+        texture[dstIdx + 1] = convertChannel(entry.bitmap[srcIdx + 1], atlasFormat);
+        texture[dstIdx + 2] = convertChannel(entry.bitmap[srcIdx + 2], atlasFormat);
+        texture[dstIdx + 3] = atlasFormat === 'rgba8' ? 255 : 1;
       } else {
-        texture[dstIdx]     = clampByte(entry.bitmap[srcIdx]);
-        texture[dstIdx + 1] = clampByte(entry.bitmap[srcIdx + 1]);
-        texture[dstIdx + 2] = clampByte(entry.bitmap[srcIdx + 2]);
-        texture[dstIdx + 3] = clampByte(entry.bitmap[srcIdx + 3]);
+        texture[dstIdx]     = convertChannel(entry.bitmap[srcIdx], atlasFormat);
+        texture[dstIdx + 1] = convertChannel(entry.bitmap[srcIdx + 1], atlasFormat);
+        texture[dstIdx + 2] = convertChannel(entry.bitmap[srcIdx + 2], atlasFormat);
+        texture[dstIdx + 3] = convertChannel(entry.bitmap[srcIdx + 3], atlasFormat);
       }
     }
   }
+}
+
+function convertChannel(floatVal: number, atlasFormat: AtlasTextureFormat): number {
+  return atlasFormat === 'rgba8' ? clampByte(floatVal) : floatVal;
 }
 
 function clampByte(floatVal: number): number {
