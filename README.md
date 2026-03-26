@@ -40,7 +40,6 @@ MSDF-Kit/
 │   ├── types.ts             Interfaces & type definitions
 │   ├── wasm-loader.ts       WASM module loader
 │   └── atlas-packer.ts      MaxRects bin-packing
-├── shader/msdf.glsl         Reference MTSDF fragment shader
 ├── extern/msdfgen/          msdfgen v1.13 (git submodule)
 ├── build/                   WASM output (msdf-kit.wasm + msdf-kit.js)
 ├── dist/                    TypeScript output
@@ -304,23 +303,6 @@ All metric and position values are **EM-normalised** (1.0 = 1 em). To convert to
 
 > `layoutText` and `shapeFromGlyphId` require a build with `MSDF_KIT_HARFBUZZ=ON` (default).
 
-## GLSL Shader
-
-Use [`shader/msdf.glsl`](shader/msdf.glsl) as the reference `mtsdf` fragment shader. It is a practical ready-to-use example; the canonical decode rules for each field type are described in the next section.
-
-```glsl
-float median(float r, float g, float b) {
-    return max(min(r, g), min(max(r, g), b));
-}
-
-float msdfAlpha(vec2 uv, vec2 texSize) {
-    vec4 mtsdf = texture2D(u_msdfAtlas, uv);
-    float sd = (median(mtsdf.r, mtsdf.g, mtsdf.b) - 0.5) * u_pxRange;
-    float screenPxDist = sd / fwidth(sd);
-    return clamp(screenPxDist + 0.5, 0.0, 1.0);
-}
-```
-
 ## Shader Decode
 
 `MSDF-Kit` generates glyphs and icons as float bitmaps first. `packAtlas()` then stores them in either single-channel atlas pages (`r8`, `r32f`) or RGBA atlas pages (`rgba8`, `rgba32f`) depending on the generation mode.
@@ -352,6 +334,10 @@ Use this with atlas formats `r8` or `r32f`.
 `msdf` is a three-channel signed distance field stored in RGB. Decode it with the channel median:
 
 ```glsl
+float median(float r, float g, float b) {
+    return max(min(r, g), min(max(r, g), b));
+}
+
 vec3 msdf = texture(u_msdfAtlas, uv).rgb;
 float sd = (median(msdf.r, msdf.g, msdf.b) - 0.5) * pxRange;
 float opacity = clamp(sd / fwidth(sd) + 0.5, 0.0, 1.0);
@@ -360,6 +346,10 @@ float opacity = clamp(sd / fwidth(sd) + 0.5, 0.0, 1.0);
 or equivalently, with a precomputed screen-space scale factor:
 
 ```glsl
+float median(float r, float g, float b) {
+    return max(min(r, g), min(max(r, g), b));
+}
+
 vec3 msdf = texture(u_msdfAtlas, uv).rgb;
 float encoded = median(msdf.r, msdf.g, msdf.b);
 float screenPxDistance = screenPxRange() * (encoded - 0.5);
@@ -377,6 +367,10 @@ For normal sharp rendering, you still usually use the RGB median because it pres
 For broader distance-driven effects, one practical approach is to decode both RGB and alpha and blend them:
 
 ```glsl
+float median(float r, float g, float b) {
+    return max(min(r, g), min(max(r, g), b));
+}
+
 vec4 mtsdf = texture(u_msdfAtlas, uv);
 float msdfDist = (0.5 - median(mtsdf.r, mtsdf.g, mtsdf.b)) * pxRange;
 float sdfDist  = (0.5 - mtsdf.a) * pxRange;
