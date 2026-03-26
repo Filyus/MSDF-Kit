@@ -1,9 +1,9 @@
 // Integration test: Font → MTSDF atlas
-// Requires: WASM built (.\build.ps1) + font (.\scripts\download-test-font.ps1)
+// Requires: WASM built (.\build.ps1) + test fonts (.\scripts\download-test-fonts.ps1)
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import type { MsdfKitWasmModule } from '../typescript/types.js';
-import { loadTestWasmModule, loadTestFont } from './helpers/load-wasm.js';
+import { loadTestWasmModule, loadTestFont, loadFixtureFont } from './helpers/load-wasm.js';
 import { packAtlas } from '../typescript/atlas-packer.js';
 
 describe('font → MTSDF (integration)', () => {
@@ -357,6 +357,89 @@ describe('font → MTSDF (integration)', () => {
       expect(atlas.regions.size).toBe(seen.size);
       for (const g of glyphs)
         expect(atlas.regions.has(`g${g.glyphId}`)).toBe(true);
+    });
+
+    it('shapes Arabic text with an Arabic-capable font', () => {
+      const arabicFontData = loadFixtureFont('NotoNaskhArabic-Regular.ttf');
+      const arabicBytes = new Uint8Array(arabicFontData);
+      const arabicFontPtr = m._malloc(arabicBytes.length);
+      m.HEAPU8.set(arabicBytes, arabicFontPtr);
+      const arabicFontHandle = m._loadFont(arabicFontPtr, arabicBytes.length);
+
+      const layoutTextWithFont = (handle: number, text: string) => {
+        const strLen = text.length * 4 + 1;
+        const strPtr = m._malloc(strLen);
+        m.stringToUTF8(text, strPtr, strLen);
+        const countPtr = m._malloc(4);
+        const ptr = m._layoutText(handle, strPtr, countPtr);
+        m._free(strPtr);
+        if (!ptr) {
+          m._free(countPtr);
+          return [];
+        }
+
+        const count = m.getValue(countPtr, 'i32');
+        m._free(countPtr);
+
+        const result: Array<{ glyphId: number; xOffset: number; yOffset: number; xAdvance: number; yAdvance: number; cluster: number }> = [];
+        for (let i = 0; i < count; i++) {
+          const base = (ptr >> 2) + i * 6;
+          result.push({
+            glyphId:  m.HEAPF32[base],
+            xOffset:  m.HEAPF32[base + 1],
+            yOffset:  m.HEAPF32[base + 2],
+            xAdvance: m.HEAPF32[base + 3],
+            yAdvance: m.HEAPF32[base + 4],
+            cluster:  m.HEAPF32[base + 5],
+          });
+        }
+
+        m._free(ptr);
+        return result;
+      };
+
+      try {
+        expect(arabicFontHandle).toBeGreaterThan(0);
+
+        const text = 'مرحبا';
+        const glyphs = layoutTextWithFont(arabicFontHandle, text);
+        expect(glyphs.length).toBeGreaterThan(0);
+        expect(glyphs.every(g => g.glyphId > 0)).toBe(true);
+        expect(glyphs.every(g => g.xAdvance >= 0)).toBe(true);
+
+        // HarfBuzz should emit RTL visual order, so cluster offsets descend.
+        for (let i = 1; i < glyphs.length; i++)
+          expect(glyphs[i - 1].cluster).toBeGreaterThan(glyphs[i].cluster);
+
+        const uniqueGlyphIds = [...new Set(glyphs.map(g => g.glyphId))];
+        expect(uniqueGlyphIds.length).toBeGreaterThan(1);
+
+        const entries = uniqueGlyphIds.map(glyphId => {
+          const shapeHandle = m._shapeFromGlyphId(arabicFontHandle, glyphId);
+          expect(shapeHandle).toBeGreaterThan(0);
+
+          const width = 32;
+          const height = 32;
+          const ptr = m._generateMtsdf(shapeHandle, width, height, 4.0, 3.0, 0, 3);
+          expect(ptr).toBeGreaterThan(0);
+
+          const bitmap = new Float32Array(width * height * 4);
+          bitmap.set(m.HEAPF32.subarray(ptr >> 2, (ptr >> 2) + width * height * 4));
+
+          m._destroyBitmap(ptr);
+          m._destroyShape(shapeHandle);
+
+          return { id: `arabic:${glyphId}`, bitmap, width, height, channels: 4 };
+        });
+
+        const atlas = packAtlas(entries);
+        expect(atlas.regions.size).toBe(entries.length);
+        for (const glyphId of uniqueGlyphIds)
+          expect(atlas.regions.has(`arabic:${glyphId}`)).toBe(true);
+      } finally {
+        if (arabicFontHandle > 0) m._destroyFont(arabicFontHandle);
+        m._free(arabicFontPtr);
+      }
     });
   });
 

@@ -32,8 +32,12 @@ export async function loadTestWasmModule(): Promise<MsdfKitWasmModule> {
   return module;
 }
 
-export function loadTestFont(): ArrayBuffer {
-  const fontPath = resolve(__dirname, '../fixtures/Roboto-Regular.ttf');
+export function loadFixtureFont(fileName: string): ArrayBuffer {
+  const fontPath = resolve(__dirname, '../fixtures', fileName);
   const buf = readFileSync(fontPath);
   return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+}
+
+export function loadTestFont(): ArrayBuffer {
+  return loadFixtureFont('Roboto-Regular.ttf');
 }
