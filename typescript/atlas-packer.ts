@@ -8,7 +8,7 @@ interface Rect {
 }
 
 function getTextureChannels(atlasFormat: AtlasTextureFormat): number {
-  return atlasFormat === 'r8' || atlasFormat === 'r16f' || atlasFormat === 'r32f' ? 1 : 4;
+  return atlasFormat === 'r8' || atlasFormat === 'r32f' ? 1 : 4;
 }
 
 function isByteFormat(atlasFormat: AtlasTextureFormat): boolean {
