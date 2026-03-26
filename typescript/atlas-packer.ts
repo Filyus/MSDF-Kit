@@ -7,6 +7,14 @@ interface Rect {
   h: number;
 }
 
+function getTextureChannels(atlasFormat: AtlasTextureFormat): number {
+  return atlasFormat === 'r8' || atlasFormat === 'r16f' || atlasFormat === 'r32f' ? 1 : 4;
+}
+
+function isByteFormat(atlasFormat: AtlasTextureFormat): boolean {
+  return atlasFormat === 'r8' || atlasFormat === 'rgba8';
+}
+
 /**
  * MaxRects bin-packing algorithm (Best Short Side Fit).
  * Pure TypeScript, no dependencies.
@@ -136,6 +144,15 @@ export function packAtlas(entries: AtlasEntry[], options?: PackOptions): PackedA
   const pot = options?.pot ?? true;
   const pxRange = options?.pxRange ?? 4;
   const atlasFormat = options?.atlasFormat ?? 'rgba8';
+  const textureChannels = getTextureChannels(atlasFormat);
+
+  for (const entry of entries) {
+    if (textureChannels === 1 && entry.channels !== 1) {
+      throw new Error(
+        `Atlas format "${atlasFormat}" only supports single-channel entries, got ${entry.id} with ${entry.channels} channels`
+      );
+    }
+  }
 
   // Sort entries by height descending for better packing
   const sorted = [...entries].sort((a, b) => b.height - a.height);
@@ -229,9 +246,10 @@ export function packAtlas(entries: AtlasEntry[], options?: PackOptions): PackedA
 }
 
 function createTexture(width: number, height: number, atlasFormat: AtlasTextureFormat): Uint8Array | Float32Array {
-  return atlasFormat === 'rgba8'
-    ? new Uint8Array(width * height * 4)
-    : new Float32Array(width * height * 4);
+  const channels = getTextureChannels(atlasFormat);
+  return isByteFormat(atlasFormat)
+    ? new Uint8Array(width * height * channels)
+    : new Float32Array(width * height * channels);
 }
 
 function blitEntry(
@@ -242,11 +260,14 @@ function blitEntry(
   atlasFormat: AtlasTextureFormat,
 ): void {
   const ch = entry.channels ?? 4;
+  const textureChannels = getTextureChannels(atlasFormat);
   for (let y = 0; y < entry.height; y++) {
     for (let x = 0; x < entry.width; x++) {
       const srcIdx = (y * entry.width + x) * ch;
-      const dstIdx = ((rect.y + y) * atlasW + (rect.x + x)) * 4;
-      if (ch === 1) {
+      const dstIdx = ((rect.y + y) * atlasW + (rect.x + x)) * textureChannels;
+      if (textureChannels === 1) {
+        texture[dstIdx] = convertChannel(entry.bitmap[srcIdx], atlasFormat);
+      } else if (ch === 1) {
         const v = convertChannel(entry.bitmap[srcIdx], atlasFormat);
         texture[dstIdx] = texture[dstIdx + 1] = texture[dstIdx + 2] = texture[dstIdx + 3] = v;
       } else if (ch === 3) {
@@ -265,7 +286,7 @@ function blitEntry(
 }
 
 function convertChannel(floatVal: number, atlasFormat: AtlasTextureFormat): number {
-  return atlasFormat === 'rgba8' ? clampByte(floatVal) : floatVal;
+  return isByteFormat(atlasFormat) ? clampByte(floatVal) : floatVal;
 }
 
 function clampByte(floatVal: number): number {

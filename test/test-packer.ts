@@ -2,6 +2,10 @@ import { describe, it, expect } from 'vitest';
 import { packAtlas } from '../typescript/atlas-packer.js';
 import type { AtlasEntry } from '../typescript/types.js';
 
+function getAtlasChannels(atlasFormat: string): number {
+  return atlasFormat === 'r8' || atlasFormat === 'r16f' || atlasFormat === 'r32f' ? 1 : 4;
+}
+
 describe('atlas-packer', () => {
   it('packs a single entry', () => {
     const entry: AtlasEntry = {
@@ -36,7 +40,7 @@ describe('atlas-packer', () => {
 
     const atlas = packAtlas(entries);
     expect(atlas.regions.size).toBe(20);
-    expect(atlas.textures[0].length).toBe(atlas.width * atlas.height * 4);
+    expect(atlas.textures[0].length).toBe(atlas.width * atlas.height * getAtlasChannels(atlas.atlasFormat));
 
     // All regions should be within atlas bounds
     for (const [, region] of atlas.regions) {
@@ -166,7 +170,7 @@ describe('atlas-packer', () => {
 
     const atlas = packAtlas(entries);
     expect(atlas.regions.size).toBe(3);
-    expect(atlas.textures[0].length).toBe(atlas.width * atlas.height * 4);
+    expect(atlas.textures[0].length).toBe(atlas.width * atlas.height * getAtlasChannels(atlas.atlasFormat));
 
     // All regions should have non-zero data blitted
     for (const [id, region] of atlas.regions) {
@@ -249,6 +253,101 @@ describe('atlas-packer', () => {
     expect(tex[base + 1]).toBeCloseTo(0.5);
     expect(tex[base + 2]).toBeCloseTo(1.75);
     expect(tex[base + 3]).toBeCloseTo(0.75);
+  });
+
+  it('can pack single-channel entries into r8 atlas pages', () => {
+    const bitmap = new Float32Array(2 * 2);
+    bitmap[0] = 0.0;
+    bitmap[1] = 0.5;
+    bitmap[2] = 1.0;
+    bitmap[3] = 0.25;
+
+    const entry: AtlasEntry = {
+      id: 'r8-test',
+      bitmap,
+      width: 2,
+      height: 2,
+      channels: 1,
+    };
+
+    const atlas = packAtlas([entry], { padding: 0, atlasFormat: 'r8' });
+    expect(atlas.atlasFormat).toBe('r8');
+    expect(atlas.textures[0]).toBeInstanceOf(Uint8Array);
+    expect(atlas.textures[0].length).toBe(atlas.width * atlas.height);
+
+    const region = atlas.regions.get('r8-test')!;
+    const base = region.y * atlas.width + region.x;
+    const tex = atlas.textures[0] as Uint8Array;
+    expect(tex[base + 0]).toBe(0);
+    expect(tex[base + 1]).toBe(128);
+  });
+
+  it('can pack single-channel entries into r16f atlas pages', () => {
+    const bitmap = new Float32Array(2 * 2);
+    bitmap[0] = -1.25;
+    bitmap[1] = 0.5;
+    bitmap[2] = 1.75;
+    bitmap[3] = 0.25;
+
+    const entry: AtlasEntry = {
+      id: 'r16f-test',
+      bitmap,
+      width: 2,
+      height: 2,
+      channels: 1,
+    };
+
+    const atlas = packAtlas([entry], { padding: 0, atlasFormat: 'r16f' });
+    expect(atlas.atlasFormat).toBe('r16f');
+    expect(atlas.textures[0]).toBeInstanceOf(Float32Array);
+    expect(atlas.textures[0].length).toBe(atlas.width * atlas.height);
+
+    const region = atlas.regions.get('r16f-test')!;
+    const base = region.y * atlas.width + region.x;
+    const tex = atlas.textures[0] as Float32Array;
+    expect(tex[base + 0]).toBeCloseTo(-1.25);
+    expect(tex[base + 1]).toBeCloseTo(0.5);
+  });
+
+  it('can pack single-channel entries into r32f atlas pages', () => {
+    const bitmap = new Float32Array(2 * 2);
+    bitmap[0] = -2.5;
+    bitmap[1] = 0.5;
+    bitmap[2] = 3.25;
+    bitmap[3] = 0.25;
+
+    const entry: AtlasEntry = {
+      id: 'r32f-test',
+      bitmap,
+      width: 2,
+      height: 2,
+      channels: 1,
+    };
+
+    const atlas = packAtlas([entry], { padding: 0, atlasFormat: 'r32f' });
+    expect(atlas.atlasFormat).toBe('r32f');
+    expect(atlas.textures[0]).toBeInstanceOf(Float32Array);
+    expect(atlas.textures[0].length).toBe(atlas.width * atlas.height);
+
+    const region = atlas.regions.get('r32f-test')!;
+    const base = region.y * atlas.width + region.x;
+    const tex = atlas.textures[0] as Float32Array;
+    expect(tex[base + 0]).toBeCloseTo(-2.5);
+    expect(tex[base + 1]).toBeCloseTo(0.5);
+  });
+
+  it('throws when packing multi-channel entries into single-channel atlas', () => {
+    const entry: AtlasEntry = {
+      id: 'bad-msdf',
+      bitmap: new Float32Array(2 * 2 * 3).fill(0.5),
+      width: 2,
+      height: 2,
+      channels: 3,
+    };
+
+    expect(() =>
+      packAtlas([entry], { atlasFormat: 'r8', padding: 0 })
+    ).toThrow(/single-channel entries/i);
   });
 
   it('fills alpha as 1.0 for 3-channel float32 atlas entries', () => {

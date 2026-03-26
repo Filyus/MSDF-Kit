@@ -1,6 +1,6 @@
 /** SDF generation mode. */
 export type SdfMode = 'sdf' | 'psdf' | 'msdf' | 'mtsdf';
-export type AtlasTextureFormat = 'rgba8' | 'rgba16f' | 'rgba32f';
+export type AtlasTextureFormat = 'r8' | 'r16f' | 'r32f' | 'rgba8' | 'rgba16f' | 'rgba32f';
 
 /** Configuration for SDF bitmap generation. */
 export interface MsdfConfig {
