@@ -254,11 +254,36 @@ void getShapeBounds(int shapeHandle,
 
 // === Generation ===
 // sdfMode: 0 = SDF (1ch), 1 = PSDF (1ch), 2 = MSDF (3ch), 3 = MTSDF (4ch)
+// errorCorrectionMode:
+// 0 = auto, 1 = auto-fast, 2 = auto-full, 3 = distance-fast,
+// 4 = distance-full, 5 = edge-fast, 6 = edge-full, 7 = disabled
+
+static msdfgen::ErrorCorrectionConfig makeErrorCorrectionConfig(int mode) {
+    using EC = msdfgen::ErrorCorrectionConfig;
+    switch (mode) {
+        case 1:
+            return EC(EC::EDGE_PRIORITY, EC::DO_NOT_CHECK_DISTANCE);
+        case 2:
+            return EC(EC::EDGE_PRIORITY, EC::ALWAYS_CHECK_DISTANCE);
+        case 3:
+            return EC(EC::INDISCRIMINATE, EC::DO_NOT_CHECK_DISTANCE);
+        case 4:
+            return EC(EC::INDISCRIMINATE, EC::ALWAYS_CHECK_DISTANCE);
+        case 5:
+            return EC(EC::EDGE_ONLY, EC::DO_NOT_CHECK_DISTANCE);
+        case 6:
+            return EC(EC::EDGE_ONLY, EC::ALWAYS_CHECK_DISTANCE);
+        case 7:
+            return EC(EC::DISABLED, EC::DO_NOT_CHECK_DISTANCE);
+        default:
+            return EC(EC::EDGE_PRIORITY, EC::CHECK_DISTANCE_AT_EDGE);
+    }
+}
 
 EMSCRIPTEN_KEEPALIVE
 float *generateMtsdf(int shapeHandle, int width, int height,
                      double pxRange, double angleThreshold,
-                     int coloringMode, int sdfMode) {
+                     int coloringMode, int sdfMode, int errorCorrectionMode) {
     auto it = g_shapes.find(shapeHandle);
     if (it == g_shapes.end()) return nullptr;
 
@@ -337,6 +362,7 @@ float *generateMtsdf(int shapeHandle, int width, int height,
         case 2: { // MSDF — multi-channel signed distance (3ch)
             msdfgen::Bitmap<float, 3> bmp(width, height);
             msdfgen::MSDFGeneratorConfig cfg;
+            cfg.errorCorrection = makeErrorCorrectionConfig(errorCorrectionMode);
             msdfgen::generateMSDF(bmp, shape, projection, distRange, cfg);
             msdfgen::distanceSignCorrection(bmp, shape, projection, sdfZeroValue, fillRule);
             for (int y = 0; y < height; ++y)
@@ -352,6 +378,7 @@ float *generateMtsdf(int shapeHandle, int width, int height,
         case 3: { // MTSDF — multi-channel signed distance + true SDF (4ch)
             msdfgen::Bitmap<float, 4> bmp(width, height);
             msdfgen::MSDFGeneratorConfig cfg;
+            cfg.errorCorrection = makeErrorCorrectionConfig(errorCorrectionMode);
             msdfgen::generateMTSDF(bmp, shape, projection, distRange, cfg);
             msdfgen::distanceSignCorrection(bmp, shape, projection, sdfZeroValue, fillRule);
             for (int y = 0; y < height; ++y)

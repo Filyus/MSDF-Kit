@@ -1,5 +1,14 @@
 /** SDF generation mode. */
 export type SdfMode = 'sdf' | 'psdf' | 'msdf' | 'mtsdf';
+export type ErrorCorrectionMode =
+  | 'auto'
+  | 'auto-fast'
+  | 'auto-full'
+  | 'distance-fast'
+  | 'distance-full'
+  | 'edge-fast'
+  | 'edge-full'
+  | 'disabled';
 export type AtlasTextureFormat = 'r8' | 'r16f' | 'r32f' | 'rgba8' | 'rgba16f' | 'rgba32f';
 
 /** Configuration for SDF bitmap generation. */
@@ -16,6 +25,8 @@ export interface MsdfConfig {
   coloring?: 'simple' | 'inkTrap' | 'byDistance';
   /** SDF generation mode (default: 'mtsdf'). */
   mode?: SdfMode;
+  /** Advanced MSDF/MTSDF bake-time artifact correction mode (default: 'auto'). Ignored for 'sdf' and 'psdf'. */
+  errorCorrection?: ErrorCorrectionMode;
 }
 
 /** Geometric bounds of a generated shape (em-normalized). */
@@ -156,7 +167,7 @@ export interface MsdfKitWasmModule {
   _generateMtsdf(
     shapeHandle: number, width: number, height: number,
     pxRange: number, angleThreshold: number, coloringMode: number,
-    sdfMode: number
+    sdfMode: number, errorCorrectionMode?: number
   ): number;
   _getBitmapSize(widthPtr: number, heightPtr: number): void;
   _destroyShape(handle: number): void;

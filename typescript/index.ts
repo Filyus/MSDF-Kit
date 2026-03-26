@@ -3,6 +3,7 @@ import { packAtlas } from './atlas-packer.js';
 import type {
   MsdfKitWasmModule,
   MsdfConfig,
+  ErrorCorrectionMode,
   GlyphMetrics,
   ShapeBounds,
   FontMetrics,
@@ -17,6 +18,16 @@ import type {
 const COLORING_MAP = { simple: 0, inkTrap: 1, byDistance: 2 } as const;
 const MODE_MAP = { sdf: 0, psdf: 1, msdf: 2, mtsdf: 3 } as const;
 const CHANNELS_MAP = { sdf: 1, psdf: 1, msdf: 3, mtsdf: 4 } as const;
+const ERROR_CORRECTION_MAP: Record<ErrorCorrectionMode, number> = {
+  auto: 0,
+  'auto-fast': 1,
+  'auto-full': 2,
+  'distance-fast': 3,
+  'distance-full': 4,
+  'edge-fast': 5,
+  'edge-full': 6,
+  disabled: 7,
+};
 
 export class MsdfKit {
   private module: MsdfKitWasmModule;
@@ -267,6 +278,7 @@ export class MsdfKit {
     const coloringMode = COLORING_MAP[config.coloring ?? 'simple'];
     const mode = config.mode ?? 'mtsdf';
     const sdfMode = MODE_MAP[mode];
+    const errorCorrectionMode = ERROR_CORRECTION_MAP[config.errorCorrection ?? 'auto'];
     const channels = CHANNELS_MAP[mode];
 
     const ptr = m._generateMtsdf(
@@ -275,7 +287,8 @@ export class MsdfKit {
       config.pxRange,
       angleThreshold,
       coloringMode,
-      sdfMode
+      sdfMode,
+      errorCorrectionMode
     );
 
     if (!ptr) {
@@ -325,6 +338,7 @@ export class MsdfKit {
 export type {
   MsdfConfig,
   SdfMode,
+  ErrorCorrectionMode,
   GlyphMetrics,
   ShapeBounds,
   FontMetrics,

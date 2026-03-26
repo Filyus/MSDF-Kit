@@ -219,6 +219,9 @@ msdf.dispose();
 | `mode` | `SdfMode` | `'mtsdf'` | `'sdf'` · `'psdf'` · `'msdf'` · `'mtsdf'` |
 | `angleThreshold` | `number` | `3.0` | Edge coloring angle threshold (radians) |
 | `coloring` | `string` | `'simple'` | `'simple'` · `'inkTrap'` · `'byDistance'` |
+| `errorCorrection` | `string` | `'auto'` | Advanced MSDF/MTSDF bake-time correction: `'auto'` · `'auto-fast'` · `'auto-full'` · `'distance-fast'` · `'distance-full'` · `'edge-fast'` · `'edge-full'` · `'disabled'` |
+
+`errorCorrection` is applied during MSDF/MTSDF baking in `msdfgen`, not in the shader. It is ignored for `sdf` and `psdf`.
 
 ### PackOptions
 
@@ -290,7 +293,7 @@ All metric and position values are **EM-normalised** (1.0 = 1 em). To convert to
 | `shapeFromGlyphId(font, glyphId)` | Glyph by OpenType glyph ID → shape handle |
 | `layoutText(font, text, outCountPtr)` | Shape text with HarfBuzz → `float*` `[glyphId, xOff, yOff, xAdv, yAdv, cluster]` × N (EM-normalised; cluster = source char byte offset) |
 | `shapeFromSvgPath(pathData, vbW, vbH)` | SVG path `d` → shape handle |
-| `generateMtsdf(shape, w, h, pxRange, angle, coloring, sdfMode)` | Shape → float bitmap |
+| `generateMtsdf(shape, w, h, pxRange, angle, coloring, sdfMode, errorCorrectionMode?)` | Shape → float bitmap |
 | `getGlyphMetrics(font, cp, ...)` | Glyph advance and bounds (EM-normalised) |
 | `getFontMetrics(font, ...)` | Ascender, descender, lineHeight, unitsPerEm (EM-normalised) |
 | `getKerning(font, cp1, cp2)` | Kerning between two codepoints (EM-normalised) |
