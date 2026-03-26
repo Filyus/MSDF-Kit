@@ -320,19 +320,37 @@ float msdfAlpha(vec2 uv, vec2 texSize) {
 
 `median(r,g,b)` recovers the distance field from multi-channel encoding. `fwidth()` provides screen-space antialiasing for crisp edges at any zoom level. The alpha channel (true SDF) is available for effects like shadows and outlines.
 
-## Texture Format Notes
+For `msdf` and `mtsdf`, sample the texture in linear space. Do not treat the distance channels as sRGB data.
 
-`MSDF-Kit` generates glyphs and icons as float bitmaps first. `packAtlas()` can then return packed single-channel pages (`atlasFormat: 'r8'`, `'r16f'`, or `'r32f'`) for `sdf`/`psdf`, or packed RGBA pages (`atlasFormat: 'rgba8'`, `'rgba16f'`, or `'rgba32f'`) for `msdf`/`mtsdf` and mixed-channel workflows.
+## Shader Decode
 
-The default `rgba8` mode matches the standard MSDF workflow and is appropriate for normal text/icon rendering where the shader only needs the local distance band around the contour.
+`MSDF-Kit` generates glyphs and icons as float bitmaps first. `packAtlas()` then stores them in either single-channel atlas pages (`r8`, `r16f`, `r32f`) or RGBA atlas pages (`rgba8`, `rgba16f`, `rgba32f`) depending on the generation mode.
+
+### Mode And Format Matrix
+
+| Generation mode | Valid atlas formats | Shader decode |
+|-----------------|---------------------|---------------|
+| `sdf` / `psdf` | `r8`, `r16f`, `r32f` | Sample `.r` |
+| `msdf` | `rgba8`, `rgba16f`, `rgba32f` | Median of `.rgb` |
+| `mtsdf` | `rgba8`, `rgba16f`, `rgba32f` | Usually median of `.rgb`; optionally use `.a` for true-SDF effects |
 
 If you choose a single-channel atlas format (`r8`, `r16f`, or `r32f`), every packed entry must also be single-channel. That is intended for `sdf` and `psdf`. Multi-channel `msdf` and `mtsdf` entries must use an RGBA atlas format.
 
-You do not inherently need `RGBA16F` just because the underlying signed distance is mathematically unbounded. In the usual MSDF pipeline, the useful range is the configured `pxRange` neighborhood around the edge, and values outside that range are expected to saturate.
+### SDF / PSDF
 
-### Standard MSDF Rendering
+`sdf` and `psdf` are single-channel modes. Read the red channel directly:
 
-Typical text/icon rendering only uses the RGB median near the contour to compute coverage:
+```glsl
+float encoded = texture(u_sdfAtlas, uv).r;
+float sd = (encoded - 0.5) * pxRange;
+float opacity = clamp(sd / fwidth(sd) + 0.5, 0.0, 1.0);
+```
+
+Use this with atlas formats `r8`, `r16f`, or `r32f`.
+
+### MSDF
+
+`msdf` is a three-channel signed distance field stored in RGB. Decode it with the channel median:
 
 ```glsl
 vec3 msdf = texture(u_msdfAtlas, uv).rgb;
@@ -349,13 +367,15 @@ float screenPxDistance = screenPxRange() * (encoded - 0.5);
 float opacity = clamp(screenPxDistance + 0.5, 0.0, 1.0);
 ```
 
-Even when the texture is `MTSDF`, standard sharp rendering typically uses only the RGB median because that preserves corners better than the true SDF in alpha. The alpha channel is available, but is usually reserved for effects or for blending away from MSDF artifacts.
+This is the standard sharp-corner text/icon path described by `msdfgen`, and it works with `rgba8`, `rgba16f`, or `rgba32f`.
 
-In this mode, only the local band around `0.5` matters. Packed `RGBA8` is the normal storage format.
+### MTSDF
 
-### Distance-Driven Rendering
+`mtsdf` stores MSDF in RGB plus a true SDF in alpha.
 
-Some renderers use the stored field itself as a signed-distance source for broader effects. A common MTSDF decode is:
+For normal sharp rendering, you still usually use the RGB median because it preserves corners better than the true SDF in alpha. Packed `rgba8` is the normal storage format when your shader only needs the local band around the edge.
+
+For broader distance-driven effects, one practical approach is to decode both RGB and alpha and blend them:
 
 ```glsl
 vec4 mtsdf = texture(u_msdfAtlas, uv);
@@ -373,7 +393,18 @@ float iso = 1.0 - smoothstep(isoWidth - aa, isoWidth + aa, abs(fract(dist * isoF
 float fill = 1.0 - smoothstep(-aa, aa, dist);
 ```
 
-In this mode the renderer cares about the magnitude of the stored distance, not just whether it crosses the edge near `0.5`. If you need those larger distances preserved instead of saturated, use a float or half-float atlas.
+Use this path when the shader cares about the magnitude of the stored distance, not just edge coverage near `0.5`.
+
+That RGB/alpha blend is an effect-oriented technique, not the single canonical `msdfgen` decode path. Different renderers may prefer different blend thresholds or may use RGB-only or alpha-only logic depending on the effect.
+
+## Atlas Formats And Precision
+
+The packed atlas format controls storage precision, not the decode math:
+- `r8` / `rgba8`: normalized 8-bit textures, best for standard coverage rendering
+- `r16f` / `rgba16f`: half-float textures, useful when you need more range or smoother intermediate values without full 32-bit storage
+- `r32f` / `rgba32f`: full-float textures, useful when your shader intentionally relies on wider signed-distance values
+
+You do not inherently need `RGBA16F` just because the underlying signed distance is mathematically unbounded. In the usual MSDF pipeline, the useful range is the configured `pxRange` neighborhood around the edge, and values outside that range are expected to saturate.
 
 `packAtlas()` returns packed `Uint8Array` RGBA pages by default. That output is ideal for standard MSDF coverage rendering, but it may not preserve enough distance range for shaders that reuse `dist` as a wider signed-distance input. In that case, use `packAtlas(entries, { atlasFormat: 'rgba16f' })` or `packAtlas(entries, { atlasFormat: 'rgba32f' })` to keep float atlas data on the CPU side before upload.
 
