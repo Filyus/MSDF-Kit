@@ -306,7 +306,7 @@ All metric and position values are **EM-normalised** (1.0 = 1 em). To convert to
 
 ## GLSL Shader
 
-Reference MTSDF fragment shader (`shader/msdf.glsl`):
+Use [`shader/msdf.glsl`](shader/msdf.glsl) as the reference `mtsdf` fragment shader. It is a practical ready-to-use example; the canonical decode rules for each field type are described in the next section.
 
 ```glsl
 float median(float r, float g, float b) {
@@ -320,10 +320,6 @@ float msdfAlpha(vec2 uv, vec2 texSize) {
     return clamp(screenPxDist + 0.5, 0.0, 1.0);
 }
 ```
-
-`median(r,g,b)` recovers the distance field from multi-channel encoding. `fwidth()` provides screen-space antialiasing for crisp edges at any zoom level. The alpha channel (true SDF) is available for effects like shadows and outlines.
-
-For `msdf` and `mtsdf`, sample the texture in linear space. Do not treat the distance channels as sRGB data.
 
 ## Shader Decode
 
