@@ -4,6 +4,7 @@ import type {
   MsdfKitWasmModule,
   MsdfConfig,
   GlyphMetrics,
+  ShapeBounds,
   FontMetrics,
   ShapedGlyph,
   AtlasEntry,
@@ -170,6 +171,7 @@ export class MsdfKit {
     const shapeHandle = m._shapeFromGlyphId(font, glyphId);
     if (shapeHandle < 0) throw new Error(`Failed to create shape for glyph ID ${glyphId}`);
 
+    const shapeBounds = this.getShapeBounds(shapeHandle);
     const mode = config.mode ?? 'mtsdf';
     let bitmap: Float32Array;
     try {
@@ -184,6 +186,7 @@ export class MsdfKit {
       width: config.width,
       height: config.height,
       channels: CHANNELS_MAP[mode],
+      shapeBounds,
     };
   }
 
@@ -302,7 +305,7 @@ export class MsdfKit {
     return bitmap;
   }
 
-  private getShapeBounds(shapeHandle: number): { left: number; bottom: number; right: number; top: number } {
+  private getShapeBounds(shapeHandle: number): ShapeBounds {
     const m = this.module;
     const buf = m._malloc(8 * 4);
     try {
@@ -323,6 +326,7 @@ export type {
   MsdfConfig,
   SdfMode,
   GlyphMetrics,
+  ShapeBounds,
   FontMetrics,
   ShapedGlyph,
   AtlasEntry,

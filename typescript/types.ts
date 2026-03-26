@@ -28,6 +28,14 @@ export interface GlyphMetrics {
   top: number;
 }
 
+/** Geometric bounds of a generated shape (em-normalized). */
+export interface ShapeBounds {
+  left: number;
+  bottom: number;
+  right: number;
+  top: number;
+}
+
 /** A single shaped glyph returned by layoutText. Positions are EM-normalised. */
 export interface ShapedGlyph {
   /** OpenType glyph ID (use with generateGlyphById). */
@@ -68,6 +76,8 @@ export interface AtlasEntry {
   channels: number;
   /** Glyph metrics (only for glyph entries). */
   metrics?: GlyphMetrics;
+  /** Geometric bounds of the generated shape, when available. */
+  shapeBounds?: ShapeBounds;
 }
 
 /** Region of a packed atlas texture. */
