@@ -128,7 +128,7 @@ npx vitest run test/test-packer.ts    # single file
 | `test-font.ts` | Integration | Font loading → glyph MTSDF pipeline |
 | `test-icon.ts` | Integration | SVG path → MTSDF, edge coloring modes |
 
-> Integration tests require `.\build.ps1` first. Font tests need a TTF in `test/fixtures/`.
+> Integration tests require `.\build.ps1` first. Font tests expect `Roboto-Regular.ttf` and `NotoNaskhArabic-Regular.ttf` in `test/fixtures/`. Run `.\scripts\download-test-fonts.ps1` to fetch them.
 
 ## API
 
@@ -272,6 +272,9 @@ for (const g of shaped) {
   penX += g.xAdvance;
 }
 ```
+
+`generateGlyphById` is only a glyph-ID-to-bitmap helper. For shaped text, use `layoutText` as the source of
+`xOffset`, `yOffset`, `xAdvance`, `yAdvance`, and `cluster`; do not treat `AtlasEntry.metrics` as shaped-text metrics.
 
 ### WASM Exports
 

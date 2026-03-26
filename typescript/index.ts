@@ -163,7 +163,8 @@ export class MsdfKit {
   }
 
   /** Generate an SDF bitmap for a glyph by its OpenType glyph ID.
-   *  Use with glyph IDs returned by layoutText. */
+   *  Use with glyph IDs returned by layoutText.
+   *  Positioning and advances should come from the ShapedGlyph values returned by layoutText. */
   generateGlyphById(id: string, font: FontHandle, glyphId: number, config: MsdfConfig): AtlasEntry {
     const m = this.module;
     const shapeHandle = m._shapeFromGlyphId(font, glyphId);
