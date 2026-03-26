@@ -18,22 +18,18 @@ export interface MsdfConfig {
   mode?: SdfMode;
 }
 
-/** Metrics for a single glyph (em-normalized). */
-export interface GlyphMetrics {
-  codepoint: number;
-  advance: number;
-  left: number;
-  bottom: number;
-  right: number;
-  top: number;
-}
-
 /** Geometric bounds of a generated shape (em-normalized). */
 export interface ShapeBounds {
   left: number;
   bottom: number;
   right: number;
   top: number;
+}
+
+/** Metrics for a single glyph (em-normalized). */
+export interface GlyphMetrics extends ShapeBounds {
+  codepoint: number;
+  advance: number;
 }
 
 /** A single shaped glyph returned by layoutText. Positions are EM-normalised. */
